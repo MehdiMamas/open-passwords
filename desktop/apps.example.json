@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy rules you want into %APPDATA%\\PassBridge\\apps.json. This file is not installed for you.",
+  "rules": [
+    {
+      "process": "RiotClientUx.exe",
+      "titleContains": "Riot Client",
+      "url": "https://account.riotgames.com"
+    }
+  ]
+}

@@ -9,3 +9,5 @@ vendor/*/.sync-tmp/
 # python bytecode
 __pycache__/
 *.pyc
+
+desktop/target/
