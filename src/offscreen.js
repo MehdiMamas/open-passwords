@@ -1,3 +1,5 @@
+import jsQR from "jsqr";
+
 let timer = null;
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -29,8 +31,19 @@ function loadImage(url) {
   });
 }
 
+function readQr(img, x, y, w, h, scale) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(w * scale));
+  canvas.height = Math.max(1, Math.round(h * scale));
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
+  return code?.data ? [code.data] : [];
+}
+
 async function decodeQr(dataUrl, rect) {
-  if (typeof BarcodeDetector !== "function") throw new Error("This browser can't read QR codes.");
   const img = await loadImage(dataUrl);
   const dpr = Number(rect?.dpr) || 1;
   const pad = 16 * dpr;
@@ -45,12 +58,8 @@ async function decodeQr(dataUrl, rect) {
   w = Math.max(1, w);
   h = Math.max(1, h);
   const scale = Math.max(1, Math.min(3, 240 / Math.max(w, h)));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(w * scale);
-  canvas.height = Math.round(h * scale);
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
-  const detector = new BarcodeDetector({ formats: ["qr_code"] });
-  const codes = await detector.detect(canvas);
-  return (codes || []).map((c) => c.rawValue).filter(Boolean).slice(0, 5);
+  const first = readQr(img, x, y, w, h, scale);
+  if (first.length) return first;
+  if (scale >= 2) return [];
+  return readQr(img, x, y, w, h, Math.min(3, scale * 2));
 }

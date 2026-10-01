@@ -5,10 +5,27 @@ let qrImageAt = 0;
 let totpHost = null;
 let totpOnMsg = null;
 
+function asPicture(node) {
+  if (node instanceof HTMLImageElement || node instanceof HTMLCanvasElement || node instanceof SVGSVGElement) return node;
+  if (node instanceof HTMLPictureElement) return node.querySelector("img");
+  if (node instanceof SVGElement && node.ownerSVGElement) return node.ownerSVGElement;
+  return null;
+}
+
+function pictureFromEvent(e) {
+  const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+  for (const node of path) {
+    const found = asPicture(node);
+    if (found) return found;
+  }
+  if (!(e.target instanceof Element)) return null;
+  return asPicture(e.target.closest("img, canvas, svg, picture"));
+}
+
 export function installQrPage() {
   document.addEventListener("contextmenu", (e) => {
-    const el = e.target instanceof Element ? e.target.closest("img") : null;
-    if (!(el instanceof HTMLImageElement)) return;
+    const el = pictureFromEvent(e);
+    if (!el) return;
     qrImageEl = el;
     qrImageAt = Date.now();
   }, true);
@@ -124,12 +141,12 @@ export function showTotpBar(payload) {
   const shadow = host.attachShadow({ mode: "closed" });
   const iframe = document.createElement("iframe");
   const token = Math.random().toString(36).slice(2);
-  const height = payload.mode === "matches" ? 280 : payload.mode === "error" ? 132 : 168;
   Object.assign(iframe.style, {
     width: "360px",
-    height: `${height}px`,
+    height: "48px",
     border: "none",
     background: "transparent",
+    overflow: "hidden",
   });
   shadow.appendChild(iframe);
   Object.assign(host.style, {
@@ -142,7 +159,8 @@ export function showTotpBar(payload) {
     background: "transparent",
     zIndex: "2147483647",
     width: "360px",
-    height: `${height}px`,
+    height: "48px",
+    overflow: "hidden",
   });
   (document.body || document.documentElement).appendChild(host);
   try { host.showPopover(); } catch {}
@@ -164,6 +182,12 @@ export function showTotpBar(payload) {
     if (e.source !== iframe.contentWindow || e.data?.token !== token) return;
     if (e.data.action === "ready") {
       paint();
+      return;
+    }
+    if (e.data.action === "resize") {
+      const h = Math.max(48, Math.min(420, Number(e.data.height) || 0));
+      iframe.style.height = `${h}px`;
+      host.style.height = `${h}px`;
       return;
     }
     const action = e.data.action;

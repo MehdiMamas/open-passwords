@@ -35,6 +35,14 @@ await build({
 });
 
 await build({
+  entryPoints: ["src/offscreen.js"],
+  bundle: true,
+  format: "iife",
+  outfile: "dist/src/offscreen.js",
+  legalComments: "none",
+});
+
+await build({
   entryPoints: {
     popup: "src/ui/popup.jsx",
     options: "src/ui/options.jsx",

@@ -4,7 +4,7 @@ const token = params.get("token") || "";
 const root = document.createElement("div");
 root.style.cssText = [
   "box-sizing:border-box",
-  "width:360px",
+  "width:100%",
   "padding:14px 14px 12px",
   "border-radius:14px",
   "background:Canvas",
@@ -34,6 +34,11 @@ function line(text, style) {
   return el;
 }
 
+function reportHeight() {
+  const h = Math.ceil(root.getBoundingClientRect().height);
+  parent.postMessage({ token, action: "resize", height: h }, "*");
+}
+
 function render(data) {
   root.replaceChildren();
   const who = [data.issuer, data.account].filter(Boolean).join(" · ");
@@ -46,6 +51,8 @@ function render(data) {
     row.style.cssText = "display:flex;justify-content:flex-end";
     row.append(button("OK", "cancel", true));
     root.append(row);
+    reportHeight();
+    requestAnimationFrame(reportHeight);
     return;
   }
   if (data.mode === "empty") {
@@ -57,6 +64,8 @@ function render(data) {
     row.style.cssText = "display:flex;gap:8px;justify-content:flex-end;align-items:center";
     row.append(button("Create a login in Passwords", "create", false), button("Cancel", "cancel", true));
     root.append(row);
+    reportHeight();
+    requestAnimationFrame(reportHeight);
     return;
   }
   root.append(
@@ -79,6 +88,8 @@ function render(data) {
   row.style.cssText = "display:flex;gap:8px;justify-content:flex-end";
   row.append(button("Cancel", "cancel", false), button("Choose a login", "choose", true));
   root.append(row);
+  reportHeight();
+  requestAnimationFrame(reportHeight);
 }
 
 window.addEventListener("message", (e) => {

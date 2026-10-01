@@ -655,8 +655,9 @@ async function rebuildContextMenu(tab) {
     chrome.contextMenus.create({ id: "pb-otp", parentId: "pb-root", title: "Copy verification code", contexts: ["editable", "page"] });
     chrome.contextMenus.create({ id: "pb-gen", parentId: "pb-root", title: "Generate password", contexts: ["editable"] });
     chrome.contextMenus.create({ id: "pb-gen-copy", parentId: "pb-root", title: "Generate password and copy", contexts: ["editable", "page", "image"] });
-    chrome.contextMenus.create({ id: "pb-qr-image", parentId: "pb-root", title: "Scan this image for a verification code", contexts: ["image"] });
+    chrome.contextMenus.create({ id: "pb-qr-image", parentId: "pb-root", title: "Scan this image for a verification code", contexts: ["editable", "page", "image"] });
     chrome.contextMenus.create({ id: "pb-qr-select", parentId: "pb-root", title: "Select a QR code…", contexts: ["editable", "page", "image"] });
+    chrome.contextMenus.create({ id: "pb-qr-image-top", title: "PassBridge: Scan this image for a verification code", contexts: ["image"] });
     if (!client.ready || !tab?.url) return;
     client.getLoginNamesForURL(tab.id, tab.url).then((logins) => {
       menuLogins = uniqueByUsername(orderByMru(registrableHost(tab.url), logins || [])).slice(0, 8);
@@ -705,7 +706,7 @@ chrome.contextMenus?.onClicked.addListener(async (info, tab) => {
     await copyText(generateApplePassword());
     return;
   }
-  if (info.menuItemId === "pb-qr-image" || info.menuItemId === "pb-qr-select") {
+  if (info.menuItemId === "pb-qr-image" || info.menuItemId === "pb-qr-image-top" || info.menuItemId === "pb-qr-select") {
     await scanQrFromMenu(info, tab);
     return;
   }
