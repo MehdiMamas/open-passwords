@@ -3,70 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="popup.css" />
+    <link rel="stylesheet" href="ui.css" />
     <title>PassBridge</title>
   </head>
   <body>
-    <header>
-      <img src="../icons/icon48.png" alt="" width="20" height="20" />
-      <h1>PassBridge</h1>
-      <button id="refresh" class="icon" title="Refresh passwords" aria-label="Refresh passwords" hidden>&#x21bb;</button>
-      <span id="dot" class="dot" title="status"></span>
-    </header>
-
-    <main>
-      <!-- No native helper -->
-      <section id="view-nohelper" hidden>
-        <p class="msg" id="nohelper-msg">
-          Couldn't reach Apple's password helper. This needs macOS 14+ with the
-          Passwords app, and the extension must run with Apple's accepted ID.
-        </p>
-        <p class="msg" id="nohelper-link" hidden>
-          <a id="icloud-store" href="https://apps.microsoft.com/detail/9pktq5699m62">Get iCloud for Windows</a>
-        </p>
-      </section>
-
-      <!-- Needs PIN -->
-      <section id="view-pin" hidden>
-        <p class="msg" id="pin-msg">
-          A verification code was generated on your Mac. Enter it to grant access.
-        </p>
-        <input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" />
-        <button id="verify" class="primary">Unlock</button>
-        <button id="newcode" class="link">Request a new code</button>
-        <p id="pin-error" class="error" hidden></p>
-      </section>
-
-      <!-- Connecting -->
-      <section id="view-connecting" hidden>
-        <p class="msg">Connecting to Apple Passwords…</p>
-      </section>
-
-      <!-- Unlocked: logins for current site -->
-      <section id="view-unlocked" hidden>
-        <p id="site" class="site"></p>
-        <ul id="logins" class="logins"></ul>
-        <p id="nologins" class="msg" hidden>No saved passwords for this site.</p>
-        <form id="lookup" class="lookup">
-          <input id="lookup-site" type="text" placeholder="Look up another site" autocomplete="off" />
-          <button type="submit" class="link">Search</button>
-        </form>
-        <!-- verification codes the vault holds for this site (TOTP generators, Messages) -->
-        <ul id="codes" class="logins codes" hidden></ul>
-        <p id="refresh-note" class="note" hidden></p>
-        <!-- hand-offs to the Passwords app: the place for notes, editing, and new logins -->
-        <div id="app-links" class="app-links">
-          <button id="open-app" class="link">Open in Passwords app</button>
-          <button id="new-login" class="link" hidden>New login in Passwords app…</button>
-          <button id="setup-totp" class="link" hidden>Set up verification code in Passwords…</button>
-        </div>
-      </section>
-    </main>
-
-    <footer>
-      <button id="open-settings" class="link" type="button">Settings</button>
-    </footer>
-
+    <div id="root"></div>
     <script type="module" src="popup.js"></script>
   </body>
 </html>

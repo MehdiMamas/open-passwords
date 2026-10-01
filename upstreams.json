@@ -1,0 +1,20 @@
+{
+  "bitwarden": {
+    "repo": "bitwarden/clients",
+    "pin": "vendor/bitwarden/PINNED",
+    "strip": "apps/browser/src/autofill/",
+    "pathsFile": "scripts/bitwarden-tracked.txt"
+  },
+  "au2001": {
+    "repo": "au2001/icloud-passwords-firefox",
+    "pin": "vendor/au2001/PINNED",
+    "strip": "",
+    "paths": ["src/utils/api.ts", "src/utils/crypto.ts", "src/utils/srp.ts", "src/utils/enums.ts"]
+  },
+  "open-passwords": {
+    "repo": "ManiForoughi2/open-passwords",
+    "pin": "vendor/open-passwords/PINNED",
+    "strip": "",
+    "paths": ["src/protocol.js"]
+  }
+}

@@ -1,6 +1,6 @@
 # Apple iCloud Passwords complaints, and how PassBridge compares
 
-Bitwarden-style autofill parity (what we copied, what Apple's helper blocks) is tracked in [BITWARDEN.md](BITWARDEN.md).
+How the Bitwarden, au2001, and open-passwords pins are updated is in [UPSTREAMS.md](UPSTREAMS.md).
 
 This maps 18 documented complaints about Apple's official iCloud Passwords
 Chrome/Edge extension to what PassBridge does. "Verified" means an automated
@@ -50,7 +50,7 @@ Legend: ✅ fixed · 🟡 partial · ⛔ inherent (no extension can fix)
 
 ## Not yet built
 
-- a save-new-password prompt (#13) and a settings UI to clear "never save" (#12)
+- a settings control that clears Apple's "never save" flag from inside the browser (#12). Saving already goes through Apple's sheet.
 
 Every ✅ above is backed by an automated test in `test-harness/automation/`. Totals
 at last run: 22/22 adversarial, 17/17 UI, 4/4 PIN, plus multi-account, input-events

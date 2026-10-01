@@ -1,6 +1,6 @@
 // mock extension variants so no macOS helper or real PIN is needed, output to .builds/
 
-import { mkdir, rm, cp, readFile, writeFile } from "fs/promises";
+import { mkdir, rm, cp, writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -9,95 +9,8 @@ const REPO = join(HERE, "..", "..");
 const DIST = join(REPO, "dist");
 const OUT = join(HERE, ".builds");
 
-const MOCK_INLINEFILL = `case "inlineFill": {
-          const tab = sender.tab;
-          const host = tab?.url ? new URL(tab.url).hostname.toLowerCase() : "";
-          const resp = await chrome.tabs.sendMessage(tab.id, { type: "fill", username: "test@example.com", password: "TestPass123", expectedHost: host });
-          sendResponse({ ok: true, filled: !!resp?.filled });
-          break;
-        }`;
-
-function patchBackground(src, kind) {
-  src = src.replace(/case "inlineFill": \{[\s\S]*?\n        \}/, MOCK_INLINEFILL);
-
-  if (kind === "unlocked") {
-    src = src.replace(
-      /case "inlineLogins": \{[\s\S]*?\n        \}/,
-      `case "inlineLogins": {
-          sendResponse({ ok: true, locked: false, logins: [{ username: "test@example.com", sites: [] }] });
-          break;
-        }`,
-    );
-  } else if (kind === "multi") {
-    src = src.replace(
-      /case "inlineLogins": \{[\s\S]*?\n        \}/,
-      `case "inlineLogins": {
-          sendResponse({ ok: true, locked: false, logins: [{ username: "alice@example.com", sites: [] }, { username: "bob@work.com", sites: [] }] });
-          break;
-        }`,
-    );
-  } else if (kind === "locked") {
-    src = src.replace(
-      /case "inlineLogins": \{[\s\S]*?\n        \}/,
-      `case "inlineLogins": {
-          sendResponse({ ok: true, locked: true, logins: [] });
-          break;
-        }`,
-    );
-  } else if (kind === "otp") {
-    src = src.replace(
-      /case "inlineLogins": \{[\s\S]*?\n        \}/,
-      `case "inlineLogins": {
-          sendResponse({ ok: true, locked: false, logins: [{ username: "test@example.com", sites: [] }] });
-          break;
-        }`,
-    );
-    src = src.replace(
-      /case "inlineOneTimeCodes": \{[\s\S]*?\n        \}/,
-      `case "inlineOneTimeCodes": {
-          sendResponse({ ok: true, locked: false, supported: true, rows: [{ id: 0, source: "totp", username: "alice@example.com", domain: "acme.example" }], requiresAuth: false });
-          break;
-        }`,
-    );
-    src = src.replace(
-      /case "inlineFillOneTimeCode": \{[\s\S]*?\n        \}/,
-      `case "inlineFillOneTimeCode": {
-          const host = sender.url ? new URL(sender.url).hostname.toLowerCase() : "";
-          const resp = await chrome.tabs.sendMessage(sender.tab.id, { type: "fillOtp", code: "246810", expectedHost: host }, { frameId: sender.frameId });
-          sendResponse({ ok: true, filled: !!resp?.filled });
-          break;
-        }`,
-    );
-  } else if (kind === "pinflow") {
-    src = src.replace(
-      /case "inlineLogins": \{[\s\S]*?\n        \}/,
-      `case "inlineLogins": {
-          if (!globalThis.__unlocked) return sendResponse({ ok: true, locked: true, logins: [] });
-          return sendResponse({ ok: true, locked: false, logins: [{ username: "test@example.com", sites: [] }] });
-          break;
-        }`,
-    );
-    src = src.replace(
-      /case "requestChallenge": \{[\s\S]*?\n        \}/,
-      `case "requestChallenge": {
-          await new Promise((r) => setTimeout(r, 100));
-          sendResponse({ ok: true, state: "needs_pin" });
-          break;
-        }`,
-    );
-    // the real handler is a braced case, so match through its closing brace
-    src = src.replace(
-      /case "verifyPin": \{[\s\S]*?\n        \}/,
-      `case "verifyPin": {
-          await new Promise((r) => setTimeout(r, 100));
-          if (msg.pin === "123456") { globalThis.__unlocked = true; sendResponse({ ok: true, state: "unlocked" }); }
-          // a wrong code burns the challenge, so the mock reports the fresh one too
-          else { sendResponse({ ok: false, error: "Incorrect code", newCode: true, state: "needs_pin" }); }
-          break;
-        }`,
-    );
-  }
-  return src;
+function mockKindModule(kind) {
+  return `export const MOCK_KIND = ${JSON.stringify(kind)};\n`;
 }
 
 const KINDS = ["unlocked", "multi", "locked", "pinflow", "otp"];
@@ -109,9 +22,7 @@ for (const kind of KINDS) {
   for (const item of ["manifest.json", "src", "icons", "overlay", "fonts"]) {
     await cp(join(DIST, item), join(dst, item), { recursive: true });
   }
-  const bgPath = join(dst, "src", "background.js");
-  const bg = await readFile(bgPath, "utf8");
-  await writeFile(bgPath, patchBackground(bg, kind));
+  await writeFile(join(dst, "src", "session", "mock-kind.js"), mockKindModule(kind));
   console.log(`built ${kind} -> ${dst}`);
 }
 console.log("\nDone. Test builds are in test-harness/automation/.builds/");

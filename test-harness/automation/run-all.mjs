@@ -4,8 +4,13 @@ import { spawn } from "child_process";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
+import { pathToFileURL } from "url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+if (!process.env.OP_PW) {
+  process.env.OP_PW = pathToFileURL(join(HERE, "..", "..", "node_modules", "playwright", "index.js")).href;
+}
 
 const DRIVERS = [
   ["PIN handshake (SRP math + challenge lifecycle)", "pin-session.test.mjs"],

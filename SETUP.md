@@ -21,6 +21,8 @@ npm install
 npm run build
 ```
 
+`npm run build` compiles the React popup, the settings page, and the content script into `dist/`.
+
 1. Open `chrome://extensions`.
 2. Turn on Developer mode.
 3. Click Load unpacked and choose the `dist` folder inside the clone (not the repo root).

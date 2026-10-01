@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@source "./**/*.{js,jsx,html}";
+@source "../../overlay/**/*.html";
+
+@theme {
+  --font-sans: "Open Runde", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --color-accent: #0a84ff;
+  --color-ok: #30d158;
+  --color-warn: #ff9f0a;
+  --color-danger: #ff453a;
+}
+
+@font-face {
+  font-family: "Open Runde";
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../fonts/OpenRunde-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Open Runde";
+  font-weight: 500;
+  font-display: swap;
+  src: url("../../fonts/OpenRunde-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Open Runde";
+  font-weight: 600;
+  font-display: swap;
+  src: url("../../fonts/OpenRunde-Semibold.woff2") format("woff2");
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  background: Canvas;
+  color: CanvasText;
+  font-family: var(--font-sans);
+}

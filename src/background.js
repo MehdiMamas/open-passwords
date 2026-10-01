@@ -1,12 +1,13 @@
 // alarm keep-alive holds the MV3 worker so the PIN isnt re-prompted every idle-out
 
-import { ApplePasswords, State, setDeviceLabel } from "./apple/protocol.js";
+import { State, setDeviceLabel } from "./apple/protocol.js";
+import { createClient } from "./session/create-client.js";
 import { labelForOs } from "./apple/os-label.js";
 import { getSettings, hostBlocked } from "./settings.js";
 import { INLINE_MENU_PORTS, portKeyForTab } from "./adapter/ports.js";
 import { generateLoginFillScript } from "./adapter/fill-script.js";
 
-const client = new ApplePasswords();
+const client = createClient();
 let platformOs = "mac";
 const platformReady = new Promise((resolve) => {
   try {

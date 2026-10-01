@@ -1,3 +1,14 @@
+import { AutoFillConstants } from "./autofill/hints.js";
+
+const UPSTREAM_USER = new Set(
+  [...AutoFillConstants.UsernameFieldNames, ...AutoFillConstants.EmailFieldNames].map((name) => name.toLowerCase()),
+);
+
+function hitsUpstreamName(el) {
+  const raw = `${el.name || ""} ${el.id || ""}`.toLowerCase().replace(/[_-]+/g, " ");
+  return raw.split(/\s+/).some((token) => token && UPSTREAM_USER.has(token));
+}
+
 // OTP inputs are never fillable login fields, that misclassification is apple's balloon-on-every-OTP bug
 console.log("[PassBridge] content script v0.50.0 loaded");
 
@@ -99,6 +110,7 @@ function hasStrongIdentitySignal(el) {
   const ac = (el.getAttribute("autocomplete") || "").toLowerCase();
   // wells fargo and nintendo mark their username box autocomplete=webauthn
   if (ac.includes("username") || ac.includes("email") || ac.includes("webauthn")) return true;
+  if (hitsUpstreamName(el)) return true;
   if (t === "email") return true;
   return /\b(e[\s-]?mail|sign[\s-]?in[\s-]?id|log[\s-]?in[\s-]?id|user[\s-]?id|username|passkey)\b/i.test(attrBlob(el));
 }

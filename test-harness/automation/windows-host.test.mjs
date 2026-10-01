@@ -11,7 +11,7 @@ const ok = (name, cond, detail = "") => {
   console.log(`${cond ? "PASS" : "FAIL"} ${name}${cond ? "" : " -> " + detail}`);
 };
 
-const SRC = new URL("../../src/", import.meta.url);
+const SRC = new URL("../../src/apple/", import.meta.url);
 const crypt = await import(new URL("crypto.js", SRC));
 const { sha256, bigIntToBytes, bytesToBigInt, padBytes, utf8ToBytes, mod, powmod } = crypt;
 
