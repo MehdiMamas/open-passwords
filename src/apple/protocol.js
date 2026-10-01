@@ -423,16 +423,18 @@ export class ApplePasswords {
     });
   }
 
-  async getPasswordForLoginName(tabId, url, loginName, queryUrl) {
+  async getPasswordForLoginName(tabId, url, loginName, queryUrl, envelopeUrl) {
     if (!this.ready) throw new Error("not unlocked");
     const { hostname } = new URL(url);
-    // envelope stays the frame host. queryUrl is a full path or a related site the background chose.
+    // encrypted URL is the page host, a path, or a website the helper listed for this frame.
+    // envelopeUrl is the outer message url. Apple sets that to the record's first website.
     const searchUrl = queryUrl || hostname;
+    const outerUrl = envelopeUrl || hostname;
     return this._withLock(async () => {
       const res = await this._encryptedQuery(
         Command.GET_PASSWORD_FOR_LOGIN_NAME,
         tabId,
-        hostname,
+        outerUrl,
         { ACT: Action.SEARCH, URL: searchUrl, USR: loginName.username },
         null, // no timeout, helper may require Touch ID here
       );

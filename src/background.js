@@ -6,6 +6,7 @@ import { labelForOs } from "./apple/os-label.js";
 import { getSettings, hostBlocked } from "./settings.js";
 import { INLINE_MENU_PORTS, portKeyForTab } from "./adapter/ports.js";
 import { generateLoginFillScript } from "./adapter/fill-script.js";
+import { passwordSearchSteps } from "./session/password-search.js";
 
 const client = createClient();
 let platformOs = "mac";
@@ -227,42 +228,6 @@ function uniqueByUsername(logins) {
   });
 }
 
-// parent or child only. a bare TLD is not a site, and notaugustana.edu does not match augustana.edu
-function hostsRelated(frameHost, siteHost) {
-  if (!frameHost || !siteHost || frameHost === siteHost) return false;
-  if (!frameHost.includes(".") || !siteHost.includes(".")) return false;
-  return frameHost.endsWith("." + siteHost) || siteHost.endsWith("." + frameHost);
-}
-
-function hostOfSite(site) {
-  const raw = String(site || "").trim();
-  if (!raw) return null;
-  try {
-    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
-function siteHosts(sites) {
-  const raw = Array.isArray(sites) ? sites : sites ? [sites] : [];
-  const out = [];
-  for (const s of raw) {
-    const text = typeof s === "string" ? s : s?.url || s?.URL || s?.host || "";
-    const h = hostOfSite(text);
-    if (h && !out.includes(h)) out.push(h);
-  }
-  return out;
-}
-
-function bestRelatedHost(frameHost, sites) {
-  const hosts = siteHosts(sites).filter((h) => hostsRelated(frameHost, h));
-  const parents = hosts.filter((h) => frameHost.endsWith("." + h)).sort((a, b) => b.length - a.length);
-  if (parents.length) return parents[0];
-  const children = hosts.filter((h) => h.endsWith("." + frameHost)).sort((a, b) => a.length - b.length);
-  return children[0] || null;
-}
-
 function framePathUrl(frameUrl) {
   const u = new URL(frameUrl);
   u.hash = "";
@@ -270,22 +235,33 @@ function framePathUrl(frameUrl) {
   return u.href;
 }
 
-// hostname first, then the full path when the helper supports it, then one related site from our own name list
+// hostname first, then the full path when the helper supports it.
+// a miss then uses websites from this frame's own login list, never a site the page named.
 async function readPasswordForFrame(tabId, frameUrl, username) {
   const host = registrableHost(frameUrl);
+  const pathUrl = client.capabilities?.supportsSubURLs ? framePathUrl(frameUrl) : null;
   const tried = [];
-  const attempt = async (queryUrl) => {
-    if (!queryUrl || tried.includes(queryUrl)) return null;
-    tried.push(queryUrl);
-    return client.getPasswordForLoginName(tabId, frameUrl, { username }, queryUrl === host ? undefined : queryUrl);
+  let cred = null;
+  const run = async (steps) => {
+    for (const step of steps) {
+      const key = `${step.envelope}\n${step.search}`;
+      if (tried.includes(key)) continue;
+      tried.push(key);
+      cred = await client.getPasswordForLoginName(
+        tabId,
+        frameUrl,
+        { username },
+        step.search === host ? undefined : step.search,
+        step.envelope === host ? undefined : step.envelope,
+      );
+      if (cred) return true;
+    }
+    return false;
   };
-  let cred = await attempt(host);
-  if (!cred && client.capabilities?.supportsSubURLs) cred = await attempt(framePathUrl(frameUrl));
-  if (!cred) {
+  if (!(await run(passwordSearchSteps(host, [], pathUrl)))) {
     const logins = await client.getLoginNamesForURL(tabId, frameUrl);
     const match = (logins || []).find((l) => normUsername(l.username) === normUsername(username));
-    const related = bestRelatedHost(host, match?.sites);
-    if (related) cred = await attempt(related);
+    await run(passwordSearchSteps(host, match?.sites, pathUrl));
   }
   if (!cred) console.info("[PassBridge] passwordRead", { status: "no credential", host, tried });
   else if (tried.length > 1) console.info("[PassBridge] passwordRead", { status: "ok", host, tried });
