@@ -1,14 +1,16 @@
-# Apple iCloud Passwords complaints, and how Open Passwords compares
+# Apple iCloud Passwords complaints, and how PassBridge compares
+
+Bitwarden-style autofill parity (what we copied, what Apple's helper blocks) is tracked in [BITWARDEN.md](BITWARDEN.md).
 
 This maps 18 documented complaints about Apple's official iCloud Passwords
-Chrome/Edge extension to what Open Passwords does. "Verified" means an automated
+Chrome/Edge extension to what PassBridge does. "Verified" means an automated
 headless test in `test-harness/` proves it (real Chrome plus the extension).
 Sources are user reports across the Chrome Web Store, Apple Communities,
 Google/Brave forums, GitHub, AppleInsider, and Macworld.
 
 Legend: ✅ fixed · 🟡 partial · ⛔ inherent (no extension can fix)
 
-| # | Complaint | Apple's behavior | Open Passwords | Status |
+| # | Complaint | Apple's behavior | PassBridge | Status |
 |---|---|---|---|---|
 | 1 | Constant re-prompt for the 6-digit code (the top complaint) | re-pairs every restart and often every few hours; resets the session on every capabilities reload | keep-alive holds the MV3 worker and the live session, and it never resets on a benign reconnect, so the frequent mid-session re-prompts are gone. only a full browser restart re-pairs (the session key is bound to the connection; Apple and au2001 both re-handshake per connection) | ✅/⛔ |
 | 2 | Verification code never arrives | helper deadlocks; says code generated, none appears | 8s timeout plus a clear error instead of hanging; a broken helper is helper-side | 🟡 |

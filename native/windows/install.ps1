@@ -1,12 +1,12 @@
 # Registers the iCloud password helper for Chromium browsers on Windows, plus the
-# Open Passwords policy and pairing-code hosts. Run once from this folder:
+# PassBridge policy and pairing-code hosts. Run once from this folder:
 #   powershell -ExecutionPolicy Bypass -File .\native\windows\install.ps1
 $ErrorActionPreference = "Stop"
 
 $ExtId = "pejdijmoenmkgeppbflobdenhhabjlaj"
 $AppleHost = "com.apple.passwordmanager"
 $Alias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\iCloudPasswordsExtensionHelper.exe"
-$Dest = Join-Path $env:LOCALAPPDATA "OpenPasswords"
+$Dest = Join-Path $env:LOCALAPPDATA "PassBridge"
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Utf8 = New-Object System.Text.UTF8Encoding $false
 
@@ -101,8 +101,8 @@ if (-not $py) {
 }
 
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
-Copy-Item -Force (Join-Path $Here "openpasswords-policy.py") (Join-Path $Dest "openpasswords-policy.py")
-Copy-Item -Force (Join-Path $Here "openpasswords-autopair.py") (Join-Path $Dest "openpasswords-autopair.py")
+Copy-Item -Force (Join-Path $Here "passbridge-policy.py") (Join-Path $Dest "passbridge-policy.py")
+Copy-Item -Force (Join-Path $Here "passbridge-autopair.py") (Join-Path $Dest "passbridge-autopair.py")
 
 function Write-HostCmd([string]$ScriptName, [string]$CmdName) {
   $cmdPath = Join-Path $Dest $CmdName
@@ -115,8 +115,8 @@ function Write-HostCmd([string]$ScriptName, [string]$CmdName) {
   return $cmdPath
 }
 
-$policyCmd = Write-HostCmd "openpasswords-policy.py" "openpasswords-policy.cmd"
-$pairCmd = Write-HostCmd "openpasswords-autopair.py" "openpasswords-autopair.cmd"
+$policyCmd = Write-HostCmd "passbridge-policy.py" "passbridge-policy.cmd"
+$pairCmd = Write-HostCmd "passbridge-autopair.py" "passbridge-autopair.cmd"
 
 function Write-NmManifest([string]$Name, [string]$Description, [string]$ExePath) {
   $file = Join-Path $Dest "$Name.json"
@@ -131,12 +131,16 @@ function Write-NmManifest([string]$Name, [string]$Description, [string]$ExePath)
   return $file
 }
 
-$policyManifest = Write-NmManifest "com.openpasswords.policy" "Open Passwords policy helper" $policyCmd
-$pairManifest = Write-NmManifest "com.openpasswords.autopair" "Open Passwords pairing-code reader" $pairCmd
+$policyManifest = Write-NmManifest "com.passbridge.policy" "PassBridge policy helper" $policyCmd
+$pairManifest = Write-NmManifest "com.passbridge.autopair" "PassBridge pairing-code reader" $pairCmd
 
 foreach ($root in $browsers) {
-  Set-Default (Join-Path $root "com.openpasswords.policy") $policyManifest
-  Set-Default (Join-Path $root "com.openpasswords.autopair") $pairManifest
+  Set-Default (Join-Path $root "com.passbridge.policy") $policyManifest
+  Set-Default (Join-Path $root "com.passbridge.autopair") $pairManifest
+  foreach ($old in @("com.openpasswords.policy", "com.openpasswords.autopair")) {
+    $oldKey = Join-Path $root $old
+    if (Test-Path -LiteralPath $oldKey) { Remove-Item -LiteralPath $oldKey -Force }
+  }
 }
 
 Write-Output ""

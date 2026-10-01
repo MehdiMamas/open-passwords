@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>PassBridge settings</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body class="options">
+    <header>
+      <img src="../icons/icon48.png" alt="" width="20" height="20" />
+      <h1>PassBridge</h1>
+    </header>
+    <h2>Autofill</h2>
+    <label class="switch-row">Inline menu
+      <select id="inlineMenuVisibility">
+        <option value="on-focus">Show on field focus</option>
+        <option value="on-click">Show when the icon is clicked</option>
+        <option value="off">Off</option>
+      </select>
+    </label>
+    <label class="switch-row"><span>Autofill on page load <span class="subnote">Off by default. A single match can ask for Touch ID or Windows Hello as the page opens.</span></span>
+      <input type="checkbox" id="autofillOnPageLoad" class="switch" />
+    </label>
+    <label class="switch-row"><span>Copy verification code after fill</span>
+      <input type="checkbox" id="copyTotpAfterFill" class="switch" />
+    </label>
+    <label class="switch-row">Clear clipboard
+      <select id="clipboardClearMs">
+        <option value="0">Never</option>
+        <option value="10000">10 seconds</option>
+        <option value="20000">20 seconds</option>
+        <option value="30000">30 seconds</option>
+        <option value="60000">1 minute</option>
+        <option value="300000">5 minutes</option>
+      </select>
+    </label>
+    <label class="switch-row"><span>Context menu</span><input type="checkbox" id="enableContextMenu" class="switch" /></label>
+    <label class="switch-row"><span>Badge count on the toolbar icon</span><input type="checkbox" id="enableBadge" class="switch" /></label>
+    <label class="switch-row"><span>Fill animation</span><input type="checkbox" id="showAnimations" class="switch" /></label>
+    <label class="switch-row"><span>Website icons</span><input type="checkbox" id="showFavicons" class="switch" /></label>
+    <p class="msg"><a id="shortcuts" href="#">Keyboard shortcuts</a></p>
+
+    <h2>Save prompts</h2>
+    <label class="switch-row"><span>Ask to save a new login</span><input type="checkbox" id="askToSave" class="switch" /></label>
+    <label class="switch-row"><span>Ask to update an existing login</span><input type="checkbox" id="askToUpdate" class="switch" /></label>
+    <label>Excluded domains <span class="subnote">One hostname per line. PassBridge will not offer to save these.</span>
+      <textarea id="excludedDomains"></textarea>
+    </label>
+    <label>Blocked domains <span class="subnote">One hostname per line. No inline menu on these sites.</span>
+      <textarea id="blockedDomains"></textarea>
+    </label>
+
+    <h2>This browser</h2>
+    <label id="pm-row" class="switch-row" hidden>
+      <span>Hide browser save-password bubble<span id="pm-note" class="subnote"></span></span>
+      <input type="checkbox" id="pm-toggle" class="switch" />
+    </label>
+    <label class="switch-row">
+      <span>Hide browser password manager entirely<span id="policy-note" class="subnote"></span></span>
+      <input type="checkbox" id="policy-toggle" class="switch" />
+    </label>
+    <label id="af-row" class="switch-row" hidden>
+      <span>Hide browser autofill suggestions<span id="af-note" class="subnote"></span></span>
+      <input type="checkbox" id="af-toggle" class="switch" />
+    </label>
+    <label class="switch-row"><span>Hide passkey autofill</span><input type="checkbox" id="pk-toggle" class="switch" /></label>
+    <label class="switch-row">
+      <span>Enter the pairing code for me<span id="autopair-note" class="subnote"></span></span>
+      <input type="checkbox" id="autopair-toggle" class="switch" />
+    </label>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

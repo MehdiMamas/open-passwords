@@ -10,7 +10,7 @@ const ctx = await chromium.launchPersistentContext("/tmp/op-adv-"+Date.now(), {
   headless:false, args:[`--disable-extensions-except=${EXT}`,`--load-extension=${EXT}`,"--headless=new","--no-first-run"],
 });
 ctx.serviceWorkers()[0] || await ctx.waitForEvent("serviceworker",{timeout:10000}).catch(()=>null);
-const box = (page) => page.locator('[data-open-passwords="suggestions"]');
+const box = (page) => page.locator('[data-passbridge="suggestions"]');
 
 const negatives = [
   ["search-bar", ["#header-search","#inline-search","#form-search"]],

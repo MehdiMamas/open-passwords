@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Open Passwords - Test Bench</title>
+  <title>PassBridge - Test Bench</title>
   <style>
     :root { color-scheme: light dark; }
     * { box-sizing: border-box; }
@@ -32,9 +32,9 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Open Passwords - Test Bench</h1>
+  <h1>PassBridge - Test Bench</h1>
   <p class="lead">
-    Load <b>Open Passwords v0.6</b>, make sure you have a saved login for
+    Load <b>PassBridge v0.6</b>, make sure you have a saved login for
     <b>openpw.test</b> in the Passwords app, then work down the page. The black bar
     at the bottom logs every dropdown, fill, and input event as it happens.
   </p>
@@ -117,11 +117,11 @@
     }
   }, true);
 
-  // Watch the Open Passwords dropdown appear/disappear.
+  // Watch the PassBridge dropdown appear/disappear.
   const obs = new MutationObserver((muts) => {
     for (const m of muts) {
       for (const n of m.addedNodes) {
-        if (n.nodeType === 1 && n.getAttribute && n.getAttribute("data-open-passwords")) {
+        if (n.nodeType === 1 && n.getAttribute && n.getAttribute("data-passbridge")) {
           const txt = n.innerText.replace(/\s+/g, " ").trim();
           L("DROPDOWN shown: \"" + txt + "\"", "w");
         }

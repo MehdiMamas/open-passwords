@@ -1,0 +1,9 @@
+apps/browser/src/autofill/services/autofill-constants.ts
+apps/browser/src/autofill/utils/qualification.ts
+apps/browser/src/autofill/services/inline-menu-field-qualification.service.ts
+apps/browser/src/autofill/services/dom-element-visibility.service.ts
+apps/browser/src/autofill/services/insert-autofill-content.service.ts
+apps/browser/src/autofill/enums/autofill-overlay.enum.ts
+apps/browser/src/autofill/content/autofill.css
+apps/browser/src/autofill/autofill.design.md
+apps/browser/src/autofill/models/autofill-script.ts

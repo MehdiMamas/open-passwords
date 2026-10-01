@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..");
+const DIST = join(REPO, "dist");
 const OUT = join(HERE, ".builds");
 
 const MOCK_INLINEFILL = `case "inlineFill": {
@@ -77,11 +78,12 @@ function patchBackground(src, kind) {
         }`,
     );
     src = src.replace(
-      /case "requestChallenge":[\s\S]*?break;/,
-      `case "requestChallenge":
+      /case "requestChallenge": \{[\s\S]*?\n        \}/,
+      `case "requestChallenge": {
           await new Promise((r) => setTimeout(r, 100));
           sendResponse({ ok: true, state: "needs_pin" });
-          break;`,
+          break;
+        }`,
     );
     // the real handler is a braced case, so match through its closing brace
     src = src.replace(
@@ -104,8 +106,8 @@ await rm(OUT, { recursive: true, force: true });
 for (const kind of KINDS) {
   const dst = join(OUT, kind);
   await mkdir(dst, { recursive: true });
-  for (const item of ["manifest.json", "src", "icons"]) {
-    await cp(join(REPO, item), join(dst, item), { recursive: true });
+  for (const item of ["manifest.json", "src", "icons", "overlay", "fonts"]) {
+    await cp(join(DIST, item), join(dst, item), { recursive: true });
   }
   const bgPath = join(dst, "src", "background.js");
   const bg = await readFile(bgPath, "utf8");

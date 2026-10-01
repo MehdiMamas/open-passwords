@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="popup.css" />
-    <title>Open Passwords</title>
+    <title>PassBridge</title>
   </head>
   <body>
     <header>
       <img src="../icons/icon48.png" alt="" width="20" height="20" />
-      <h1>Open Passwords</h1>
+      <h1>PassBridge</h1>
       <button id="refresh" class="icon" title="Refresh passwords" aria-label="Refresh passwords" hidden>&#x21bb;</button>
       <span id="dot" class="dot" title="status"></span>
     </header>
@@ -47,6 +47,10 @@
         <p id="site" class="site"></p>
         <ul id="logins" class="logins"></ul>
         <p id="nologins" class="msg" hidden>No saved passwords for this site.</p>
+        <form id="lookup" class="lookup">
+          <input id="lookup-site" type="text" placeholder="Look up another site" autocomplete="off" />
+          <button type="submit" class="link">Look up</button>
+        </form>
         <!-- verification codes the vault holds for this site (TOTP generators, Messages) -->
         <ul id="codes" class="logins codes" hidden></ul>
         <p id="refresh-note" class="note" hidden></p>
@@ -59,28 +63,8 @@
       </section>
     </main>
 
-    <!-- Footer: toggles for the browser's own password/autofill features -->
     <footer>
-      <label id="pm-row" class="switch-row" hidden>
-        <span>Hide browser save-password bubble<span id="pm-note" class="subnote"></span></span>
-        <input type="checkbox" id="pm-toggle" class="switch" />
-      </label>
-      <label id="policy-row" class="switch-row">
-        <span>Hide browser password manager entirely<span id="policy-note" class="subnote"></span></span>
-        <input type="checkbox" id="policy-toggle" class="switch" />
-      </label>
-      <label id="af-row" class="switch-row" hidden>
-        <span>Hide browser autofill suggestions<span id="af-note" class="subnote"></span></span>
-        <input type="checkbox" id="af-toggle" class="switch" />
-      </label>
-      <label id="pk-row" class="switch-row">
-        <span>Hide passkey autofill</span>
-        <input type="checkbox" id="pk-toggle" class="switch" />
-      </label>
-      <label id="autopair-row" class="switch-row">
-        <span>Enter the pairing code for me<span id="autopair-note" class="subnote"></span></span>
-        <input type="checkbox" id="autopair-toggle" class="switch" />
-      </label>
+      <button id="open-settings" class="link" type="button">Settings</button>
     </footer>
 
     <script type="module" src="popup.js"></script>

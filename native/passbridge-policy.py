@@ -24,8 +24,8 @@ BUNDLES = [
     "com.vivaldi.Vivaldi",
 ]
 KEY = "PasswordManagerEnabled"
-APPDIR = os.path.expanduser("~/Library/Application Support/OpenPasswords")
-PROFILE = os.path.join(APPDIR, "OpenPasswords-HidePasswordManager.mobileconfig")
+APPDIR = os.path.expanduser("~/Library/Application Support/PassBridge")
+PROFILE = os.path.join(APPDIR, "PassBridge-HidePasswordManager.mobileconfig")
 
 _CF = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
 _CF.CFStringCreateWithCString.restype = ctypes.c_void_p
@@ -52,7 +52,7 @@ def write_profile():
         payloads.append(
             {
                 "PayloadType": b,
-                "PayloadIdentifier": "com.openpasswords.hidepm." + b,
+                "PayloadIdentifier": "com.passbridge.hidepm." + b,
                 "PayloadUUID": str(uuid.uuid4()).upper(),
                 "PayloadEnabled": True,
                 "PayloadVersion": 1,
@@ -61,9 +61,9 @@ def write_profile():
         )
     profile = {
         "PayloadType": "Configuration",
-        "PayloadDisplayName": "Open Passwords - Hide Browser Password Manager",
+        "PayloadDisplayName": "PassBridge - Hide Browser Password Manager",
         "PayloadDescription": "Disables the built-in password manager in Chromium browsers.",
-        "PayloadIdentifier": "com.openpasswords.hidepm",
+        "PayloadIdentifier": "com.passbridge.hidepm",
         "PayloadUUID": "1D8B2E90-0000-4000-A000-4F70656E5057",
         "PayloadVersion": 1,
         "PayloadRemovalDisallowed": False,

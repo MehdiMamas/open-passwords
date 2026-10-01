@@ -15,7 +15,7 @@ async function withExt(extPath, label, fn) {
 }
 const results = [];
 function check(name, cond, detail) { results.push({ name, pass: !!cond, detail }); console.log(`${cond ? "PASS" : "FAIL"} ${name}${cond ? "" : " -> " + detail}`); }
-const box = (page) => page.locator('[data-open-passwords="suggestions"]');
+const box = (page) => page.locator('[data-passbridge="suggestions"]');
 const txt = async (page) => (await box(page).count()) ? (await box(page).innerText()).replace(/\s+/g, " ").trim() : "";
 
 const UNLOCKED = fileURLToPath(new URL("./.builds/unlocked", import.meta.url));

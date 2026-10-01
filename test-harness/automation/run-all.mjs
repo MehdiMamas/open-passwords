@@ -22,6 +22,8 @@ const DRIVERS = [
   ["Iframe login (same-origin frame shows dropdown)", "drive-iframe.mjs"],
   ["Cross-origin iframe shows NO offer (leak closed)", "drive-xorigin.mjs"],
   ["Verification codes (TOTP rows, split-box fill, shortcut, otpauth finder)", "drive-otp.mjs"],
+  ["Inline menu host (closed shadow, field icon)", "drive-menu.mjs"],
+  ["Adapter unit (fill script, port names)", "unit.test.mjs"],
 ];
 
 if (!existsSync(join(HERE, ".builds", "unlocked"))) {
@@ -41,7 +43,7 @@ function run(file) {
 
 let passed = 0;
 const failures = [];
-console.log("Running Open Passwords headless suite\n" + "=".repeat(50));
+console.log("Running PassBridge headless suite\n" + "=".repeat(50));
 for (const [name, file] of DRIVERS) {
   process.stdout.write(`\n▶ ${name}\n`);
   const { code, out } = await run(file);

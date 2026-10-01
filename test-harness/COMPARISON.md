@@ -3,7 +3,7 @@
 A worksheet for comparing two Chrome extensions against the same mock pages:
 
 - Extension A: Apple iCloud Passwords (the official one)
-- Extension B: Open Passwords
+- Extension B: PassBridge
 
 The goal is to find where each detects fields correctly, where it nags, and where
 it fires false positives, especially the 6-box OTP case (`otp-multibox.html`) that
@@ -36,7 +36,7 @@ pops Apple's "Enable AutoFill" balloon on every box.
 
 Legend: ✅ correct · ⚠️ partial / clunky · ❌ wrong or nags · — n/a
 
-## 0. Pre-verified field detection (Open Passwords)
+## 0. Pre-verified field detection (PassBridge)
 
 Automated results: the content-script classifier was run against each harness page
 directly (JSDOM), so they're objective. The live A/B below adds the on-screen
@@ -62,7 +62,7 @@ targets the forum's newsletter/search boxes.
 Do: focus the username field, then the password field. Trigger the offer and fill both. Submit, reload, check it offers again.
 Expected: one credential offer on username/password; fills both; save prompt on a new login.
 
-| Check | Apple (A) | Open Passwords (B) | Winner / notes |
+| Check | Apple (A) | PassBridge (B) | Winner / notes |
 |---|---|---|---|
 | field icon / decoration appears |  |  |  |
 | offers saved credential |  |  |  |
@@ -73,7 +73,7 @@ Expected: one credential offer on username/password; fills both; save prompt on 
 Do: fill/confirm username on step 1, click Next. on step 2 the password field is revealed by JS, see if the manager offers to fill it.
 Expected: username filled on step 1; on step 2 the newly-shown `current-password` field is detected and offered.
 
-| Check | Apple (A) | Open Passwords (B) | Winner / notes |
+| Check | Apple (A) | PassBridge (B) | Winner / notes |
 |---|---|---|---|
 | offers username on step 1 |  |  |  |
 | detects revealed password on step 2 |  |  |  |
@@ -85,7 +85,7 @@ Expected: username filled on step 1; on step 2 the newly-shown `current-password
 Do: focus the Password (`new-password`) field. see if a strong password is offered. check it mirrors into Confirm password. submit and watch for a save prompt.
 Expected: offers a generated strong password; fills both new-password fields; prompts to save the new credential; does not push an existing saved login here.
 
-| Check | Apple (A) | Open Passwords (B) | Winner / notes |
+| Check | Apple (A) | PassBridge (B) | Winner / notes |
 |---|---|---|---|
 | offers / generates a strong password |  |  |  |
 | fills both new-password + confirm |  |  |  |
@@ -98,7 +98,7 @@ Expected: offers a generated strong password; fills both new-password fields; pr
 Do: click into the first box. watch carefully. then click/tab through boxes 2 to 6.
 Expected: treat the six `maxlength="1"` boxes as one OTP field, show at most one prompt and distribute the digits, not a separate balloon on every box.
 
-| Check | Apple (A) | Open Passwords (B) | Winner / notes |
+| Check | Apple (A) | PassBridge (B) | Winner / notes |
 |---|---|---|---|
 | number of prompts/balloons (1 is good, 6 is the bug) |  |  |  |
 | shows "Enable AutoFill" nag on every box |  |  |  |
@@ -110,7 +110,7 @@ Expected: treat the six `maxlength="1"` boxes as one OTP field, show at most one
 Do: click the single `one-time-code` field.
 Expected: one clean prompt; fills the whole field at once; no nagging. baseline to contrast against 3.1.
 
-| Check | Apple (A) | Open Passwords (B) | Winner / notes |
+| Check | Apple (A) | PassBridge (B) | Winner / notes |
 |---|---|---|---|
 | single clean code prompt |  |  |  |
 | fills the full field at once |  |  |  |
@@ -123,7 +123,7 @@ Expected: one clean prompt; fills the whole field at once; no nagging. baseline 
 Do: click each input in turn: header login (username/password), nav search box, reply body, topic title, sidebar newsletter email.
 Expected: offers a credential only on the header login. must not offer on the search box, reply box, topic title, or newsletter email.
 
-| Field | Should offer? | Apple (A) | Open Passwords (B) | Winner / notes |
+| Field | Should offer? | Apple (A) | PassBridge (B) | Winner / notes |
 |---|---|---|---|---|
 | header login (username/password) | yes |  |  |  |
 | nav search box | no |  |  |  |
@@ -137,7 +137,7 @@ Expected: offers a credential only on the header login. must not offer on the se
 Do: walk all four cards top to bottom. for card 4, wait ~1.5s for the form to inject, then test it.
 Expected: fill the iframe login; ignore the hidden password; ideally recognize the no-name password; detect the injected form after it appears.
 
-| Case | Expected | Apple (A) | Open Passwords (B) | Winner / notes |
+| Case | Expected | Apple (A) | PassBridge (B) | Winner / notes |
 |---|---|---|---|---|
 | 1. login inside iframe, offers fill | fills (same-origin) |  |  |  |
 | 2. hidden password field, ignored | not decorated/filled |  |  |  |
@@ -151,7 +151,7 @@ caveat in mind when generalizing.
 
 ## Summary scorecard
 
-| Scenario | Apple (A) | Open Passwords (B) | Winner |
+| Scenario | Apple (A) | PassBridge (B) | Winner |
 |---|---|---|---|
 | 1.1 standard login |  |  |  |
 | 1.2 two-step login |  |  |  |
@@ -163,6 +163,6 @@ caveat in mind when generalizing.
 
 Headline takeaways
 
-- biggest win for Open Passwords: ____________________________________________
+- biggest win for PassBridge: ____________________________________________
 - biggest remaining gap vs Apple: ____________________________________________
 - the 6-box OTP result (one prompt vs six balloons): ____________________________________________

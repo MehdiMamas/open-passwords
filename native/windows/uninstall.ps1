@@ -2,7 +2,7 @@
 # Does not touch HKLM keys written by iCloud for Windows.
 $ErrorActionPreference = "Stop"
 
-$Dest = Join-Path $env:LOCALAPPDATA "OpenPasswords"
+$Dest = Join-Path $env:LOCALAPPDATA "PassBridge"
 $AppleManifest = Join-Path $Dest "com.apple.passwordmanager.json"
 $browsers = @(
   "HKCU:\Software\Google\Chrome\NativeMessagingHosts",
@@ -24,7 +24,7 @@ foreach ($root in $browsers) {
     Remove-Item -LiteralPath $appleKey -Force
     Write-Output "removed $appleKey"
   }
-  foreach ($name in @("com.openpasswords.policy", "com.openpasswords.autopair")) {
+  foreach ($name in @("com.passbridge.policy", "com.passbridge.autopair", "com.openpasswords.policy", "com.openpasswords.autopair")) {
     $key = Join-Path $root $name
     if (Test-Path -LiteralPath $key) {
       Remove-Item -LiteralPath $key -Force
@@ -50,9 +50,11 @@ foreach ($key in $policies) {
   }
 }
 
-if (Test-Path -LiteralPath $Dest) {
-  Remove-Item -LiteralPath $Dest -Recurse -Force
-  Write-Output "removed $Dest"
+foreach ($dir in @($Dest, (Join-Path $env:LOCALAPPDATA "OpenPasswords"))) {
+  if (Test-Path -LiteralPath $dir) {
+    Remove-Item -LiteralPath $dir -Recurse -Force
+    Write-Output "removed $dir"
+  }
 }
 
 Write-Output "Fully quit and reopen the browser."

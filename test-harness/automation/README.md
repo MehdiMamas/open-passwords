@@ -12,7 +12,8 @@ helper or real PIN is needed.
 #    (or rely on the default /tmp path if present)
 npm i playwright && npx playwright install chromium
 
-# 1. generate the mock extension builds
+# 1. build the extension, then generate the mock builds from dist/
+cd ../.. && npm install && npm run build && cd test-harness/automation
 node build-test-extensions.mjs
 
 # 2. serve the harness pages (separate terminal, from test-harness/)

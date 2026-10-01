@@ -1,158 +1,39 @@
 <p align="center">
-  <img src="icons/icon128.png" width="96" height="96" alt="Open Passwords logo">
+  <img src="icons/icon128.png" width="96" height="96" alt="PassBridge logo">
 </p>
 
-<h1 align="center">Open Passwords</h1>
+<h1 align="center">PassBridge</h1>
 
 <p align="center">
-  A Chrome/Edge/Brave extension that talks to Apple Passwords (iCloud Keychain) on macOS and Windows and autofills your logins, without the official extension's headaches.
+  iCloud Passwords in Chrome, with the autofill behavior of the Bitwarden extension.
+  macOS and Windows. Not affiliated with Apple or Bitwarden.
 </p>
 
----
+PassBridge is a fork of [Open Passwords](https://github.com/ManiForoughi2/open-passwords). It speaks Apple's native-messaging protocol (`com.apple.passwordmanager`) so the live vault stays in iCloud, and it takes its menu, fill sequence, shortcuts, and save prompts from [Bitwarden's browser extension](https://github.com/bitwarden/clients) (pinned in [BITWARDEN.md](BITWARDEN.md)).
 
-Apple's official iCloud Passwords extension for Chrome sits at 2.3 out of 5 across ~2,600 ratings. It forgets your session and re-asks for the 6-digit code every few hours, throws an "Enable AutoFill" balloon on top of one-time-code boxes, and fights Chrome's own password manager. I got tired of it and wrote a replacement client.
+Start here: **[SETUP.md](SETUP.md)** for macOS and Windows.
 
-It speaks the same native-messaging protocol Apple's extension uses (`com.apple.passwordmanager`): an SRP-6a handshake where the 6-digit code your Mac or PC shows you is the shared secret, then an AES-GCM encrypted channel for the password queries. Same vault, same OS authorization, saner client behavior. On Windows the helper is `iCloudPasswordsExtensionHelper.exe` from iCloud for Windows.
+## What you get
 
-It connects to the live vault, asks for the code once, lists the logins for the current site, and fills them.
+- An inline menu on login fields, with an icon in the field, keyboard navigation, and a top-layer popover the page cannot cover.
+- Ctrl/Cmd+Shift+L to fill and cycle matching logins. A toolbar badge with the count.
+- A right-click menu to fill, copy a username, password, or verification code, or generate a password.
+- A save / update bar that hands the password to Apple's own save sheet. Nothing is written without that sheet.
+- Verification codes from the Passwords app, and links that open the entry in the Passwords app.
 
-## What it fixes
+## What stays Apple's
 
-| The complaint about Apple's extension | What this does |
-|---|---|
-| re-prompts for the 6-digit code every restart, sometimes every few hours | a keep-alive alarm holds the MV3 worker and the session alive, so you enter the code once per real session ([background.js](src/background.js)) |
-| "Enable AutoFill" balloon on every field, including OTP boxes | the inline dropdown shows up only on genuine login fields. one-time-code boxes get nothing unless the vault actually holds a [verification code](#verification-codes-the-passwords-app-and-a-shortcut) for the site ([content.js](src/content.js)) |
-| 100% CPU / typing lag | the content script does zero per-keystroke work, it only reacts when you focus a login field |
-| re-downloads every image on hover to scan for QR codes | there's no image or QR scanning here at all |
-| fills the wrong field or wrong origin | fills are pinned to the page's origin and skip hidden/clickjacked fields |
-
-You fill two ways: the inline dropdown when you focus a login field, or the toolbar popup. Both run through the same origin-checked, OS-authorized path. New or changed passwords get offered to Apple's own save sheet, nothing is stored without a click.
-
-## The catch you should know about first
-
-This is a sideload-from-GitHub tool. It can't go on the Chrome Web Store, and the reason is in macOS itself.
-
-macOS 14+ ships a native helper called `PasswordManagerBrowserExtensionHelper`. On macOS 15.4 and later that helper only accepts connections from two hard-coded extension IDs, Apple's own Chrome and Edge extensions. Those IDs are compiled into the signed system binary, and it refuses everything else.
-
-So to connect at all, this extension's `manifest.json` carries the public `key` from Apple's extension, which makes Chrome assign it the one ID the helper accepts: `pejdijmoenmkgeppbflobdenhhabjlaj`. That's the only way a Chrome extension reaches the helper on current macOS.
-
-What that means for you:
-
-- it works when loaded unpacked for personal use
-- it can't be published to the Web Store, because that ID and key belong to Apple
-- you have to disable Apple's official iCloud Passwords extension first, since two extensions can't share one ID in the same profile
-
-For a publishable browser client, Firefox is the path that works, see [au2001/icloud-passwords-firefox](https://github.com/au2001/icloud-passwords-firefox). Chrome is locked to Apple's IDs.
-
-### Why an own-ID version isn't possible
-
-On macOS 15.4+, reading the live vault needs either Apple's native helper (which demands one of Apple's two IDs) or an Apple-only keychain entitlement. I tried every other route and each one dead-ends:
-
-| Route | What happened |
-|---|---|
-| spawn the helper via a proxy native host | killed by the helper's parent launch constraint, the parent has to be a whitelisted browser |
-| own extension ID into the helper | rejected, the allowed IDs are hardcoded in the signed binary |
-| `security` CLI / `Security.framework` | returns 0 synchronizable items, it can't see the iCloud vault |
-| read `keychain-2.db` directly | the SQLite is readable but the password blobs are encrypted, keys gated by Apple-only entitlements |
-| Apple's [`password-manager-resources`](https://github.com/apple/password-manager-resources) contribution process | only authorizes browsers by signing identity through OS updates, no path for a third-party extension |
-
-Borrowing Apple's key is the only way in. The evidence is in [VERIFICATION.md](VERIFICATION.md).
-
-## Requirements
-
-- macOS 14 (Sonoma) or later, signed into iCloud with Passwords on, **or** Windows with [iCloud for Windows](https://apps.microsoft.com/detail/9pktq5699m62) installed and Passwords turned on
-- Chrome, Edge, or Brave (any Chromium browser that loads unpacked extensions should do, those three are what I've run it on). On Windows, Brave, Chromium, and Vivaldi need `native/windows/install.ps1` so they can see Apple's helper
-- Apple's official iCloud Passwords extension removed or disabled
-
-## Install
-
-```bash
-git clone https://github.com/ManiForoughi2/open-passwords.git
-```
-
-1. disable Apple's official iCloud Passwords extension (it claims the same ID)
-2. open `chrome://extensions` and turn on Developer mode (top right)
-3. click Load unpacked and pick the `open-passwords` folder
-4. confirm the ID reads `pejdijmoenmkgeppbflobdenhhabjlaj`
-5. on Windows, run `powershell -ExecutionPolicy Bypass -File .\native\windows\install.ps1` once, then fully quit the browser. This points Chrome and Edge at the WindowsApps alias for Apple's helper (the package path under `Program Files\WindowsApps` often fails when Chrome launches it) and registers that host for Brave, Chromium, and Vivaldi
-6. click the toolbar icon, type the 6-digit code your Mac or PC shows, done
-7. go to a site with a saved login and fill it
-
-### Optional: hide the browser's own password manager
-
-The popup can suppress the browser's competing save bubble and autofill dropdown on its own (toggles in the footer). Removing the browser's whole password manager, the omnibox key icon and built-in autofill included, takes a macOS managed policy, and an extension can't write one by itself. So there's a one-time helper:
-
-```bash
-./native/install.sh   # macOS: config profile + pairing-code reader
-```
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\native\windows\install.ps1
-```
-
-It copies `openpasswords-policy.py` to `~/Library/Application Support/OpenPasswords` and registers it as a native messaging host with every Chromium browser it finds (Chrome, Brave, Edge, Chromium, Arc, Vivaldi). Fully quit and reopen your browser (`Cmd+Q`). The **Hide browser password manager entirely** toggle in the popup now works: it builds a configuration profile that sets `PasswordManagerEnabled=false` for those browsers and opens it, you approve it once in System Settings. Turning the toggle off opens the Profiles pane so you can remove it again. `./native/uninstall.sh` removes the helper and its registrations. The helper accepts messages solely from this extension's ID and only ever runs `open` on the profile it wrote.
-
-On Windows the same toggle writes `PasswordManagerEnabled=0` under `HKCU\Software\Policies` for Chrome, Edge, Brave, Chromium, and Vivaldi. If that key is locked, Windows shows one approval prompt. Quit and reopen the browser after flipping it. `native/windows/uninstall.ps1` removes the HKCU host registrations and that policy value. The Windows pairing-code reader looks at iCloud and notification windows through UI Automation; if the toast does not expose its text, type the code instead.
-
-## Verification codes, the Passwords app, and a shortcut
-
-The helper that ships with recent macOS (verified on macOS 27) speaks a few commands beyond passwords, and v0.48 uses them:
-
-- **Verification codes.** Focus a one-time-code field and the dropdown lists the verification codes Apple Passwords holds for that site (the TOTP generators you set up in the Passwords app, with the account each belongs to). Pick one and the current value is read from the vault (Touch ID if your Mac asks) and typed in, one digit per box on a split six-box widget. Codes that land in Messages show up the same way when the helper announces them. The toolbar popup lists the same codes; if the page has no code field, Fill shows you the value instead.
-- **Open in Passwords app.** The popup links straight to this site's entry in the Passwords app, which is where notes live (the browser protocol never carries them). When the helper allows it there is also **New login in Passwords app…**, which opens the app's new-login sheet pre-filled with the site.
-- **Set up verification code in Passwords….** On a 2FA setup page that prints an `otpauth://` link or setup key (most do, under "can't scan the QR?"), the popup offers to hand it to the Passwords app so the generator is created there. Only links and visible text are read; there is still no image or QR scanning.
-- **Keyboard shortcut.** `Cmd+Shift+.` reopens the dropdown on the focused login or code field, or focuses the login field if nothing is focused. Rebind it at `chrome://extensions/shortcuts`.
-- **Enter the pairing code for me** (off by default). The 6-digit code is the encryption secret and only ever appears on the helper's own window, so pairing can't be skipped. With this toggle on, a small native helper reads the code off that window through Accessibility the moment it appears and the extension enters it. The window still flashes for well under a second, once per browser launch, and nobody types anything. The reader looks at Apple's helper window and nothing else. macOS asks once to let the browser automate System Events; if the toggle reports an error, also add the browser under System Settings → Privacy & Security → Accessibility. Needs `native/install.sh`.
-
-Every code sits behind a click, same rule as passwords. A page never gets a code because a field appeared.
-
-## How it works
-
-```
-popup.js / content.js
-        │  runtime messages
-        ▼
-background.js  ──  keep-alive alarm keeps the session warm
-        │
-        ▼
-protocol.js  ──  chrome.runtime.connectNative("com.apple.passwordmanager")
-        │            GET_CAPABILITIES → m0 (challenge/PIN) → m2 (verify) → queries
-        ▼
-srp.js + crypto.js   SRP-6a (RFC 5054, 3072-bit) + AES-GCM session
-        ▼
-PasswordManagerBrowserExtensionHelper (macOS) or iCloudPasswordsExtensionHelper.exe (Windows)
-```
-
-## What it doesn't fix
-
-- the OS authorization prompt. when the helper reads a password, macOS asks for Touch ID or your login password, and Windows may ask for Windows Hello. that's the per-credential `RequiresUserAuthenticationToFill` flag set by the vault. Chrome's built-in manager skips it only because it keeps passwords in its own database instead of the iCloud vault, and removing it would mean giving up live vault access.
-- no Linux. same as Apple, the native helper only exists on macOS and Windows.
-- no passkey or TOTP management. codes get filled, but you create and edit the generators in the Passwords app.
-- it still rides on Apple's helper. if Apple changes or breaks it, like past macOS updates have, this breaks too.
-
-## Troubleshooting
-
-### Your Mac shows a code, but the extension says it is incorrect
-
-A code belongs to one handshake. The helper ends that handshake as soon as it checks a code, right or wrong. A new handshake puts a new code on screen and ends the old one. The old prompt can stay visible after its code is dead.
-
-The extension asks for a code only when no live code exists. After a failed attempt, the message names the code to type next. If your Mac shows two prompts, use the code from the newest one. You can also select **Request a new code** in the popup.
-
-A code expires after 3 minutes. After that, the extension asks your Mac for a new code instead of checking the old one.
-
-## Security notes
-
-- the session key lives only in the worker's memory and is never written to disk
-- every password query is AES-GCM encrypted end to end with the helper
-- the PIN only derives the SRP shared key, it isn't stored
-- reading a password can trigger a Touch ID prompt, that prompt comes from the helper
+- The 6-digit pairing code once per browser launch, and Touch ID or Windows Hello when the vault asks.
+- Matching a login to a site. The helper does that. There is no per-item "exact URL" rule.
+- Passkeys. Chrome on macOS already offers iCloud passkeys. This extension does not invent a second passkey store.
+- No Linux, and no Chrome Web Store listing. The helper only accepts Apple's extension id, so this copy is loaded unpacked. See [SETUP.md](SETUP.md).
 
 ## Credits
 
-The protocol implementation is derived from [au2001/icloud-passwords-firefox](https://github.com/au2001/icloud-passwords-firefox) (Apache-2.0). See [`NOTICE`](./NOTICE).
+- [ManiForoughi2/open-passwords](https://github.com/ManiForoughi2/open-passwords) (Apache-2.0), the client this fork starts from.
+- [au2001/icloud-passwords-firefox](https://github.com/au2001/icloud-passwords-firefox) (Apache-2.0), the protocol implementation in `src/apple/`.
+- [bitwarden/clients](https://github.com/bitwarden/clients) (GPL-3.0), the autofill behavior. Snapshot under `vendor/bitwarden/`. Nothing from `bitwarden_license/` is included.
 
-## License
+See [NOTICE](NOTICE). License: GPL-3.0, see [LICENSE](LICENSE).
 
-Apache-2.0. See [`LICENSE`](./LICENSE).
-
-Not affiliated with or endorsed by Apple Inc.
+"Apple", "iCloud", and "Passwords" are trademarks of Apple Inc. "Bitwarden" is a trademark of Bitwarden Inc.

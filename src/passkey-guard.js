@@ -5,8 +5,8 @@
 
   const orig = creds.get.bind(creds);
   let hide = false;
-  addEventListener("openpasswords:hide-passkeys-on", () => (hide = true));
-  addEventListener("openpasswords:hide-passkeys-off", () => (hide = false));
+  addEventListener("passbridge:hide-passkeys-on", () => (hide = true));
+  addEventListener("passbridge:hide-passkeys-off", () => (hide = false));
 
   creds.get = function (options) {
     const conditional = !!(options && options.mediation === "conditional" && options.publicKey);

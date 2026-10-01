@@ -228,3 +228,9 @@ footer button.link { text-align: left; font-size: 12px; opacity: 0.85; }
 .steps ol { margin: 0 0 10px; padding-left: 18px; }
 .steps li { margin-bottom: 3px; }
 .steps button.primary { width: 100%; padding: 8px; }
+.favicon { width: 16px; height: 16px; flex: none; border-radius: 3px; }
+.lookup { display: flex; gap: 6px; margin-top: 8px; }
+.lookup input { flex: 1; }
+body.options { width: auto; max-width: 640px; margin: 24px auto; padding: 0 16px 32px; }
+body.options h2 { font-size: 13px; margin: 18px 0 8px; }
+body.options textarea { width: 100%; min-height: 72px; font: 13px/1.4 var(--font); }

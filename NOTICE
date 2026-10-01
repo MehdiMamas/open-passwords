@@ -1,16 +1,33 @@
-Open Passwords
-Copyright 2026 the Open Passwords contributors
+PassBridge
+Copyright 2026 the PassBridge contributors
 
-This product reimplements the Apple Passwords browser-extension native-messaging
-protocol (SRP-6a handshake + AES-GCM session). The protocol implementation in
-src/srp.js, src/crypto.js, and src/protocol.js is derived from:
+PassBridge is a fork of Open Passwords, retargeted at Bitwarden's autofill
+behavior while still reading the live Apple Passwords vault.
 
+Upstream client (Apache-2.0):
+  Open Passwords
+  https://github.com/ManiForoughi2/open-passwords
+  Copyright 2026 the Open Passwords contributors
+
+Protocol implementation in src/apple/srp.js, src/apple/crypto.js, and
+src/apple/protocol.js, derived from:
   icloud-passwords-firefox
   https://github.com/au2001/icloud-passwords-firefox
   Copyright (c) au2001, licensed under the Apache License, Version 2.0.
-
-A copy of the Apache License 2.0 is available at:
   https://www.apache.org/licenses/LICENSE-2.0
+
+Autofill behavior and the files under vendor/bitwarden/ are taken from:
+  bitwarden/clients  apps/browser/src/autofill
+  https://github.com/bitwarden/clients
+  Copyright (c) Bitwarden Inc.
+  Licensed under the GNU General Public License, Version 3.
+  Pinned commit: fc5de86 (30 Sep 2026).
+  Nothing from the bitwarden_license/ directory is included.
+  Bitwarden is a trademark of Bitwarden Inc. This project is not affiliated
+  with, authorized, or endorsed by Bitwarden Inc.
+
+This combined work is licensed under the GNU General Public License, Version 3.
+See the LICENSE file.
 
 "Apple", "iCloud", "iCloud Keychain", and "Passwords" are trademarks of Apple
 Inc. This project is not affiliated with, authorized, or endorsed by Apple.

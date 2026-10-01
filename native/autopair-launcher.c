@@ -1,6 +1,6 @@
-// main executable of "Open Passwords Helper.app". macOS names the process asking for
+// main executable of "PassBridge Helper.app". macOS names the process asking for
 // Automation/Accessibility after the app bundle, so the permission prompt says
-// "Open Passwords" instead of "Python 3". it only execs the reader script next to it.
+// "PassBridge" instead of "Python 3". it only execs the reader script next to it.
 #include <libgen.h>
 #include <mach-o/dyld.h>
 #include <stdio.h>
@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
   char *macos = strdup(dirname(real));      /* .../Contents/MacOS */
   char *contents = strdup(dirname(macos));  /* .../Contents */
   char script[4096];
-  snprintf(script, sizeof script, "%s/Resources/openpasswords-autopair.py", contents);
+  snprintf(script, sizeof script, "%s/Resources/passbridge-autopair.py", contents);
 
   char **args = calloc((size_t)argc + 3, sizeof(char *));
   args[0] = "/usr/bin/python3";

@@ -50,169 +50,11 @@ function show(name) {
   for (const [k, el] of Object.entries(views)) el.hidden = k !== name;
 }
 
-const pmToggle = document.getElementById("pm-toggle");
-const pmNote = document.getElementById("pm-note");
-
-function renderPmToggle() {
-  const pref = chrome.privacy?.services?.passwordSavingEnabled;
-  const row = document.getElementById("pm-row");
-  if (!pref?.get) return;
-  pref.get({}, (d) => {
-    if (chrome.runtime.lastError || !d) return;
-    row.hidden = false;
-    pmToggle.checked = d.value === false;
-    const controllable =
-      d.levelOfControl === "controllable_by_this_extension" ||
-      d.levelOfControl === "controlled_by_this_extension";
-    pmToggle.disabled = !controllable;
-    pmNote.textContent = controllable
-      ? ""
-      : d.levelOfControl === "controlled_by_other_extensions"
-        ? "controlled by another extension"
-        : "controlled by browser policy";
-  });
-}
-
-pmToggle.addEventListener("change", () => {
-  const pref = chrome.privacy?.services?.passwordSavingEnabled;
-  if (!pref) return;
-  const on = pmToggle.checked;
-  chrome.storage?.local?.set({ suppressSaveBubble: on });
-  // read back after writing, the browser can silently refuse
-  const verify = () =>
-    pref.get({}, (d) => {
-      renderPmToggle();
-      if (on && d && d.value !== false) {
-        pmNote.textContent = "browser refused it - flip it in password settings below";
-      }
-    });
-  if (on) pref.set({ value: false }, verify);
-  else pref.clear({}, verify);
+document.getElementById("open-settings").addEventListener("click", () => {
+  chrome.runtime.openOptionsPage();
 });
 
-renderPmToggle();
-
-// a user defaults write isnt a forced policy, only a config profile approved once in System Settings is
-const policyToggle = document.getElementById("policy-toggle");
-const policyNote = document.getElementById("policy-note");
-
-function policyMsg(action) {
-  return new Promise((resolve) => {
-    try {
-      chrome.runtime.sendNativeMessage("com.openpasswords.policy", { action }, (resp) => {
-        if (chrome.runtime.lastError) resolve({ error: chrome.runtime.lastError.message });
-        else resolve(resp || { error: "no reply" });
-      });
-    } catch (e) {
-      resolve({ error: String(e) });
-    }
-  });
-}
-
-async function renderPolicyToggle() {
-  const r = await policyMsg("get");
-  if (r.error || !r.ok) {
-    policyToggle.disabled = true;
-    policyNote.textContent = `needs the policy helper - ${helperInstallHint()}`;
-    return;
-  }
-  policyToggle.disabled = false;
-  policyToggle.checked = !!r.hidden;
-  policyNote.textContent = "";
-}
-
-policyToggle.addEventListener("change", async () => {
-  const on = policyToggle.checked;
-  policyToggle.disabled = true;
-  const r = await policyMsg(on ? "set" : "clear");
-  policyToggle.disabled = false;
-  if (r.error || !r.ok) {
-    policyNote.textContent = r?.error || `helper failed - ${helperInstallHint()}`;
-    policyToggle.checked = !on;
-    return;
-  }
-  // the profile only sticks once approved, reflect the real forced state
-  policyToggle.checked = !!r.hidden;
-  if (r.note) policyNote.textContent = r.note;
-  else if (on && !r.hidden) policyNote.textContent = "approve the profile in System Settings, then reopen this popup";
-  else if (!on && r.hidden) policyNote.textContent = "remove the profile in System Settings, then reopen this popup";
-  else policyNote.textContent = "";
-});
-
-renderPolicyToggle();
-
-// credit-card autofill stays untouched so google pay keeps working
-const afToggle = document.getElementById("af-toggle");
-const afNote = document.getElementById("af-note");
-
-function renderAfToggle() {
-  const pref = chrome.privacy?.services?.autofillAddressEnabled;
-  const row = document.getElementById("af-row");
-  if (!pref?.get) return;
-  pref.get({}, (d) => {
-    if (chrome.runtime.lastError || !d) return;
-    row.hidden = false;
-    afToggle.checked = d.value === false;
-    const controllable =
-      d.levelOfControl === "controllable_by_this_extension" ||
-      d.levelOfControl === "controlled_by_this_extension";
-    afToggle.disabled = !controllable;
-    afNote.textContent = controllable ? "" : "controlled elsewhere";
-  });
-}
-
-afToggle.addEventListener("change", () => {
-  const pref = chrome.privacy?.services?.autofillAddressEnabled;
-  if (!pref) return;
-  const on = afToggle.checked;
-  chrome.storage?.local?.set({ suppressAddressAutofill: on });
-  const verify = () =>
-    pref.get({}, (d) => {
-      renderAfToggle();
-      if (on && d && d.value !== false) {
-        afNote.textContent = "browser refused it - flip it in autofill settings";
-      }
-    });
-  if (on) pref.set({ value: false }, verify);
-  else pref.clear({}, verify);
-});
-
-renderAfToggle();
-
-const pkToggle = document.getElementById("pk-toggle");
-chrome.storage?.local?.get({ hidePasskeys: false }, (d) => {
-  pkToggle.checked = !!d.hidePasskeys;
-});
-pkToggle.addEventListener("change", () => {
-  chrome.storage?.local?.set({ hidePasskeys: pkToggle.checked });
-});
-
-// off by default, needs the browser allowed to automate System Events and macOS asks the first time
-const autoPairToggle = document.getElementById("autopair-toggle");
-const autoPairNote = document.getElementById("autopair-note");
-chrome.storage?.local?.get({ autoPair: false }, (d) => {
-  autoPairToggle.checked = !!d.autoPair;
-});
-autoPairToggle.addEventListener("change", async () => {
-  const on = autoPairToggle.checked;
-  chrome.storage?.local?.set({ autoPair: on });
-  autoPairNote.textContent = "";
-  if (!on) return;
-  autoPairNote.textContent = "checking…";
-  const r = await send({ type: "autoPairCheck" });
-  if (r?.ok) {
-    autoPairNote.textContent = `on - the next code ${deviceLabel} shows gets entered for you`;
-  } else if (/not found|forbidden|host/i.test(r?.error || "")) {
-    autoPairNote.textContent = `needs the reader helper - ${helperInstallHint()}, then restart the browser`;
-  } else {
-    autoPairNote.textContent = r?.error || "the reader could not reach System Events";
-  }
-});
-
-function renderAutoPairError(err) {
-  if (!autoPairToggle.checked || !err) return;
-  autoPairNote.textContent = `last attempt: ${err}`;
-}
+let showFavicons = true;
 
 function setDot(state) {
   dot.className = "dot";
@@ -272,11 +114,29 @@ async function renderLogins() {
     none.hidden = false;
     return;
   }
+  const host = tab?.url ? new URL(tab.url).hostname : "";
   for (const login of res.logins) {
     const li = document.createElement("li");
+    if (showFavicons && host) {
+      const icon = document.createElement("img");
+      icon.className = "favicon";
+      icon.alt = "";
+      icon.width = 16;
+      icon.height = 16;
+      icon.src = `https://icons.duckduckgo.com/ip3/${host}.ico`;
+      li.appendChild(icon);
+    }
     const u = document.createElement("span");
     u.className = "u";
     u.textContent = login.username || "(no username)";
+    const copyUser = document.createElement("button");
+    copyUser.textContent = "User";
+    copyUser.title = "Copy username";
+    copyUser.addEventListener("click", () => send({ type: "copyField", field: "username", username: login.username }));
+    const copyPass = document.createElement("button");
+    copyPass.textContent = "Pass";
+    copyPass.title = "Copy password";
+    copyPass.addEventListener("click", () => send({ type: "copyField", field: "password", username: login.username }));
     const fill = document.createElement("button");
     fill.textContent = "Fill";
     fill.addEventListener("click", async () => {
@@ -285,10 +145,35 @@ async function renderLogins() {
       if (r?.ok && r.filled) window.close();
       else fill.disabled = false;
     });
-    li.append(u, fill);
+    li.append(u, copyUser, copyPass, fill);
     list.appendChild(li);
   }
 }
+
+document.getElementById("lookup").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const raw = document.getElementById("lookup-site").value.trim();
+  if (!raw) return;
+  const res = await send({ type: "lookupLogins", url: raw });
+  const list = document.getElementById("logins");
+  const none = document.getElementById("nologins");
+  list.innerHTML = "";
+  document.getElementById("site").textContent = res?.host || raw;
+  if (!res?.ok || !res.logins?.length) {
+    none.hidden = false;
+    none.textContent = res?.error || "No saved passwords for that site.";
+    return;
+  }
+  none.hidden = true;
+  for (const login of res.logins) {
+    const li = document.createElement("li");
+    const u = document.createElement("span");
+    u.className = "u";
+    u.textContent = login.username || "(no username)";
+    li.appendChild(u);
+    list.appendChild(li);
+  }
+});
 
 async function renderCodes() {
   const list = document.getElementById("codes");
@@ -328,7 +213,10 @@ async function renderCodes() {
       fill.disabled = false;
       flashNote(r?.error ? `Couldn't read the code: ${r.error}` : "Couldn't read the code");
     });
-    li.append(text, fill);
+    const copy = document.createElement("button");
+    copy.textContent = "Copy";
+    copy.addEventListener("click", () => send({ type: "copyField", field: "otp", id: row.id }));
+    li.append(text, copy, fill);
     list.appendChild(li);
   }
   list.hidden = false;
@@ -457,7 +345,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   applyPlatformCopy();
   const res = await send({ type: "getState" });
   caps = res?.caps || {};
-  renderAutoPairError(res?.autoPairError);
+  showFavicons = res?.settings?.showFavicons !== false;
   let state = res?.state ?? "disconnected";
   if (state === "needs_pin") {
     // never on top of a code thats already showing, a second prompt kills the first code

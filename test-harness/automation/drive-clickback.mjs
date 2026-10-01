@@ -11,7 +11,7 @@ ctx.serviceWorkers()[0] || (await ctx.waitForEvent("serviceworker", { timeout: 1
 const page = await ctx.newPage();
 await page.goto(`${BASE}/testbench.html`, { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(300);
-const box = () => page.locator('[data-open-passwords="suggestions"]');
+const box = () => page.locator('[data-passbridge="suggestions"]');
 const results = [];
 const ok = (n, c) => { results.push(c); console.log((c ? "PASS " : "FAIL ") + n); };
 await page.locator("#u1").click(); await page.waitForTimeout(400);

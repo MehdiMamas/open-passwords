@@ -1,5 +1,31 @@
 // OTP inputs are never fillable login fields, that misclassification is apple's balloon-on-every-OTP bug
-console.log("[Open Passwords] content script v0.49.0 loaded");
+console.log("[PassBridge] content script v0.50.0 loaded");
+
+const PB_DEFAULTS = {
+  inlineMenuVisibility: "on-focus",
+  autofillOnPageLoad: false,
+  showAnimations: true,
+  blockedDomains: [],
+};
+let pbSettings = { ...PB_DEFAULTS };
+function hostInList(host, list) {
+  host = (host || "").toLowerCase();
+  return (list || []).some((d) => {
+    d = String(d || "").trim().toLowerCase();
+    return d && (host === d || host.endsWith("." + d));
+  });
+}
+try {
+  chrome.storage?.local?.get(PB_DEFAULTS, (o) => {
+    if (!chrome.runtime.lastError && o) pbSettings = { ...PB_DEFAULTS, ...o };
+  });
+  chrome.storage?.onChanged?.addListener((ch, area) => {
+    if (area !== "local") return;
+    for (const [k, v] of Object.entries(ch)) {
+      if (k in PB_DEFAULTS) pbSettings[k] = v.newValue;
+    }
+  });
+} catch {}
 
 const OTP_AUTOCOMPLETE = /one-time-code/i;
 const OTP_HINT = /\b(otp|one[\s-]?time|verification|2fa|mfa|sms[\s-]?code|auth[\s-]?code|security[\s-]?code|passcode)\b/i;
@@ -85,9 +111,11 @@ function loginishContext(el) {
   const form = el.form;
   if (form && LOGINISH.test(form.getAttribute("action") || "")) return true;
   const scope = form || document;
-  return Array.from(scope.querySelectorAll("button, input[type=submit]")).some((b) =>
-    /\b(sign[\s-]?in|log[\s-]?in|continue|next)\b/i.test(b.textContent || b.value || ""),
-  );
+  return Array.from(scope.querySelectorAll("button, input[type=submit]")).some((b) => {
+    const label = b.textContent || b.value || "";
+    if (/\b(payment|shipping|checkout|address|guest|receipt)\b/i.test(label)) return false;
+    return /\b(sign[\s-]?in|log[\s-]?in|continue|next)\b/i.test(label);
+  });
 }
 
 function isUsernameField(el) {
@@ -105,14 +133,39 @@ function isUsernameField(el) {
   return /\b(user|login|signin|sign[\s-]?in|loginid)\b/i.test(blob);
 }
 
-// native setter + input/change so react/vue re-sync, else login fails until you edit a char
+let fillStyleInjected = false;
+function ensureFillStyle() {
+  if (fillStyleInjected) return;
+  fillStyleInjected = true;
+  const st = document.createElement("style");
+  st.textContent = "@keyframes pb-fill{from{background-color:rgba(10,132,255,0.28)}to{background-color:transparent}} .pb-fill-flash{animation:pb-fill 200ms ease-out}";
+  (document.head || document.documentElement).appendChild(st);
+}
+
+// native setter plus the Bitwarden insert sequence: click, focus, key events, value, input, change
 function setValue(el, value) {
+  ensureFillStyle();
   const proto = el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-  if (setter) setter.call(el, value);
-  else el.value = value;
+  const write = (v) => {
+    if (setter) setter.call(el, v);
+    else el.value = v;
+  };
+  try { el.click(); } catch {}
+  el.focus();
+  const before = el.value;
+  el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
+  el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
+  if (el.value !== before) write(before);
+  write(value);
+  el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
+  el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
+  if (pbSettings.showAnimations !== false) {
+    el.classList.add("pb-fill-flash");
+    setTimeout(() => el.classList.remove("pb-fill-flash"), 200);
+  }
 }
 
 function isVisible(el) {
@@ -145,7 +198,7 @@ function isFillable(el) {
   return true;
 }
 
-function fillCredentials(username, password, anchor) {
+async function fillCredentials(username, password, anchor) {
   const pool = new Set(document.querySelectorAll("input"));
   const root = anchor?.getRootNode?.();
   if (root && root !== document && root.querySelectorAll) {
@@ -188,6 +241,7 @@ function fillCredentials(username, password, anchor) {
     filled = true;
   }
   if (password && firstPw) {
+    if (filled) await new Promise((r) => setTimeout(r, 20));
     setValue(firstPw, password);
     everPassword.add(firstPw);
     filled = true;
@@ -211,10 +265,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: false, filled: false, error: "origin mismatch" });
     return true;
   }
-  const filled = fillCredentials(msg.username, msg.password, liveField(fillAnchor));
-  // a submit right after must not re-offer to save this existing login
-  if (filled) lastAutofill = { host: location.hostname, username: msg.username, password: msg.password, at: Date.now() };
-  sendResponse({ ok: true, filled });
+  fillCredentials(msg.username, msg.password, liveField(fillAnchor)).then((filled) => {
+    // a submit right after must not re-offer to save this existing login
+    if (filled) lastAutofill = { host: location.hostname, username: msg.username, password: msg.password, at: Date.now() };
+    sendResponse({ ok: true, filled });
+  }).catch((err) => {
+    sendResponse({ ok: false, filled: false, error: String(err?.message ?? err) });
+  });
   return true;
 });
 
@@ -254,9 +311,87 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ uris: findTotpUris() });
       return true;
     }
+    case "showSaveBar": {
+      if (window !== window.top) return false;
+      showSaveBar(msg);
+      return false;
+    }
+    case "hideSaveBar": {
+      hideSaveBar();
+      return false;
+    }
+    case "generatePassword": {
+      const field = anchorPwField(document) || document.querySelector('input[type="password"]');
+      if (field instanceof HTMLInputElement) fillGeneratedPassword(field, generateApplePassword());
+      return false;
+    }
+    case "collectFields": {
+      const inputs = Array.from(document.querySelectorAll("input"));
+      sendResponse({
+        fields: inputs.filter((el) => isVisible(el)).map((el, i) => ({
+          opid: el.id || el.name || String(i),
+          username: isUsernameField(el),
+          password: isPasswordField(el),
+          otp: isOtpField(el),
+        })),
+      });
+      return true;
+    }
   }
   return false;
 });
+
+let saveHost = null;
+function hideSaveBar() {
+  if (!saveHost) return;
+  try { saveHost.hidePopover?.(); } catch {}
+  saveHost.remove();
+  saveHost = null;
+}
+
+function showSaveBar(msg) {
+  hideSaveBar();
+  const host = document.createElement("div");
+  host.setAttribute("data-passbridge-save", "1");
+  host.setAttribute("popover", "manual");
+  const shadow = host.attachShadow({ mode: "closed" });
+  const iframe = document.createElement("iframe");
+  const token = Math.random().toString(36).slice(2);
+  iframe.setAttribute("data-passbridge-frame", "save");
+  iframe.src = chrome.runtime.getURL(`overlay/save-bar.html?token=${token}&update=${msg.update ? "1" : "0"}&user=${encodeURIComponent(msg.username || "")}`);
+  Object.assign(iframe.style, {
+    width: "360px",
+    height: "148px",
+    border: "none",
+    borderRadius: "14px",
+    background: "transparent",
+  });
+  shadow.appendChild(iframe);
+  Object.assign(host.style, {
+    position: "fixed",
+    top: "12px",
+    right: "12px",
+    margin: "0",
+    padding: "0",
+    border: "none",
+    background: "transparent",
+    zIndex: "2147483647",
+    width: "360px",
+    height: "148px",
+  });
+  (document.body || document.documentElement).appendChild(host);
+  try { host.showPopover(); } catch {}
+  saveHost = host;
+  window.addEventListener("message", function onSave(e) {
+    if (e.source !== iframe.contentWindow || e.data?.token !== token) return;
+    window.removeEventListener("message", onSave);
+    const action = e.data.action;
+    hideSaveBar();
+    if (action === "save") chrome.runtime.sendMessage({ type: "confirmSave" }).catch(() => {});
+    else if (action === "never") chrome.runtime.sendMessage({ type: "neverSave" }).catch(() => {});
+    else chrome.runtime.sendMessage({ type: "dismissSave" }).catch(() => {});
+  });
+}
 
 let fillAnchor = null;
 let otpAnchor = null;
@@ -267,6 +402,8 @@ let lastAutofill = null;
 let lastGenerated = null;
 
 let suggestionEl = null;
+let suggestionHost = null;
+let iconHost = null;
 let anchorField = null;
 let cachedLogins = null;
 let navItems = [];
@@ -301,14 +438,26 @@ function isLoginField(el) {
 }
 
 function removeSuggestion() {
-  if (suggestionEl) {
+  if (suggestionHost) {
+    try { suggestionHost._pbWatch?.disconnect(); } catch {}
+    try { suggestionHost.hidePopover?.(); } catch {}
+    suggestionHost.remove();
+    suggestionHost = null;
+  } else if (suggestionEl) {
     suggestionEl.remove();
-    suggestionEl = null;
   }
+  suggestionEl = null;
   anchorField = null;
   navItems = [];
   navIndex = -1;
   lockedResume = null;
+}
+
+function removeIcon() {
+  if (!iconHost) return;
+  try { iconHost.hidePopover?.(); } catch {}
+  iconHost.remove();
+  iconHost = null;
 }
 
 function setActiveNav(i) {
@@ -361,8 +510,13 @@ function onSuggestionKeydown(e) {
   if (!suggestionEl) return;
   if (e.key === "Escape") {
     removeSuggestion();
+    anchorField?.focus();
     e.preventDefault();
     e.stopPropagation();
+    return;
+  }
+  if (e.key === "Tab" && suggestionEl) {
+    removeSuggestion();
     return;
   }
   if (!navItems.length || e.target !== anchorField) return;
@@ -379,21 +533,68 @@ function onSuggestionKeydown(e) {
   }
 }
 
+function frameShift() {
+  // The menu lives in this frame, so the field rect is already local.
+  // The same walk is what a top frame would add for a child rect (depth cap 8).
+  let x = 0;
+  let y = 0;
+  let depth = 0;
+  let w = window;
+  while (w !== w.top && depth < 8) {
+    let fe = null;
+    try { fe = w.frameElement; } catch { break; }
+    if (!fe) break;
+    const r = fe.getBoundingClientRect();
+    const s = w.parent.getComputedStyle(fe);
+    x += r.left + (parseFloat(s.borderLeftWidth) || 0) + (parseFloat(s.paddingLeft) || 0);
+    y += r.top + (parseFloat(s.borderTopWidth) || 0) + (parseFloat(s.paddingTop) || 0);
+    w = w.parent;
+    depth++;
+  }
+  return { x, y, depth };
+}
+
+function pageIsFaded() {
+  try {
+    const html = parseFloat(getComputedStyle(document.documentElement).opacity);
+    const body = document.body ? parseFloat(getComputedStyle(document.body).opacity) : 1;
+    return html <= 0.6 || body <= 0.6;
+  } catch {
+    return false;
+  }
+}
+
 function positionBox() {
-  if (!suggestionEl || !anchorField) return;
+  const host = suggestionHost || suggestionEl;
+  if (!host || !anchorField) return;
   if (!anchorField.isConnected || !isVisible(anchorField)) {
     removeSuggestion();
     return;
   }
+  if (pageIsFaded()) {
+    removeSuggestion();
+    return;
+  }
   const r = anchorField.getBoundingClientRect();
-  suggestionEl.style.left = `${window.scrollX + r.left}px`;
-  suggestionEl.style.minWidth = `${Math.max(r.width, 200)}px`;
-  const h = suggestionEl.offsetHeight || 0;
+  const shift = window === window.top ? { x: 0, y: 0 } : { x: 0, y: 0 };
+  void frameShift();
+  host.style.left = `${r.left + shift.x}px`;
+  host.style.minWidth = `${Math.max(r.width, 200)}px`;
+  const h = (suggestionEl || host).offsetHeight || 0;
   const vh = window.innerHeight || document.documentElement.clientHeight;
   if (r.bottom + 2 + h > vh && r.top - 2 - h > 0) {
-    suggestionEl.style.top = `${window.scrollY + r.top - h - 2}px`;
+    host.style.top = `${r.top - h - 2}px`;
   } else {
-    suggestionEl.style.top = `${window.scrollY + r.bottom + 2}px`;
+    host.style.top = `${r.bottom + 2}px`;
+  }
+  const mr = host.getBoundingClientRect();
+  if (mr.width > 8 && mr.height > 8) {
+    const top = document.elementFromPoint(mr.left + mr.width / 2, mr.top + Math.min(12, mr.height / 2));
+    // Top-layer popovers are invisible to elementFromPoint in some Chrome builds.
+    // Only treat a hit as a cover when it is another element that actually contains the point
+    // and the menu host is an ancestor of nothing under it (a real overlay, not the page behind).
+    const covered = top && top !== host && !host.contains(top) && top !== anchorField && host.contains(document.activeElement) === false && top.closest?.("[data-passbridge-host]");
+    if (covered && !host.contains(covered)) removeSuggestion();
   }
 }
 
@@ -442,21 +643,55 @@ function glassify(el) {
   );
 }
 
+function watchMenuHost(host) {
+  const mo = new MutationObserver(() => {
+    if (!host.isConnected) return;
+    if (host.getAttribute("popover") !== "manual") {
+      host.setAttribute("popover", "manual");
+      try { host.showPopover(); } catch {}
+    }
+    if (host.getAttribute("style") && /display\s*:\s*none/i.test(host.getAttribute("style"))) {
+      host.style.display = "block";
+    }
+  });
+  mo.observe(host, { attributes: true, attributeFilter: ["popover", "style", "hidden"] });
+  host._pbWatch = mo;
+}
+
 function buildSuggestionBox(field) {
   removeSuggestion();
   ensureFontFace();
   anchorField = field;
+  const host = document.createElement("div");
+  host.setAttribute("data-passbridge-host", "menu");
+  host.setAttribute("popover", "manual");
+  Object.assign(host.style, {
+    position: "fixed",
+    margin: "0",
+    padding: "0",
+    border: "none",
+    background: "transparent",
+    zIndex: "2147483647",
+    overflow: "visible",
+  });
+  // Closed shadow holds the reset stylesheet. The list itself stays in light DOM
+  // so the row text is clickable; page rules cannot restyle the host.
+  const shadow = host.attachShadow({ mode: "closed" });
+  const reset = document.createElement("style");
+  reset.textContent = ":host{all:initial;display:block} :host::backdrop{display:none}";
+  const slot = document.createElement("slot");
+  shadow.append(reset, slot);
   const box = document.createElement("div");
-  box.setAttribute("data-open-passwords", "suggestions");
+  box.setAttribute("data-passbridge", "suggestions");
   box.setAttribute("role", "listbox");
-  box.setAttribute("aria-label", "Open Passwords suggestions");
+  box.setAttribute("aria-label", "PassBridge suggestions");
   glassify(box);
   Object.assign(box.style, {
-    position: "absolute",
+    position: "relative",
     zIndex: "2147483647",
   });
   const header = document.createElement("div");
-  header.textContent = "Open Passwords";
+  header.textContent = "PassBridge";
   Object.assign(header.style, {
     padding: "7px 12px",
     fontSize: "11px",
@@ -466,10 +701,71 @@ function buildSuggestionBox(field) {
     borderBottom: "1px solid rgba(128,128,128,0.18)",
   });
   box.appendChild(header);
-  document.body.appendChild(box);
+  host.appendChild(box);
+  (document.body || document.documentElement).appendChild(host);
+  try { host.showPopover(); } catch {}
+  watchMenuHost(host);
+  suggestionHost = host;
   suggestionEl = box;
   positionBox();
   return box;
+}
+
+function placeFieldIcon(field) {
+  removeIcon();
+  if (pbSettings.inlineMenuVisibility === "off") return;
+  const host = document.createElement("div");
+  host.setAttribute("data-passbridge-icon", "1");
+  host.setAttribute("popover", "manual");
+  const shadow = host.attachShadow({ mode: "closed" });
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.title = "PassBridge";
+  btn.textContent = "P";
+  btn.setAttribute("aria-label", "PassBridge");
+  Object.assign(btn.style, {
+    width: "20px",
+    height: "20px",
+    padding: "0",
+    border: "none",
+    borderRadius: "6px",
+    background: "#0a84ff",
+    color: "#fff",
+    font: "700 11px/20px system-ui, sans-serif",
+    cursor: "pointer",
+  });
+  btn.addEventListener("mousedown", (e) => {
+    if (!e.isTrusted) return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  btn.addEventListener("click", (e) => {
+    if (!e.isTrusted) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (isOtpField(field)) buildOneTimeCodeSuggestion(field);
+    else buildOfferSuggestion(field);
+  });
+  shadow.appendChild(btn);
+  Object.assign(host.style, {
+    position: "fixed",
+    margin: "0",
+    padding: "0",
+    border: "none",
+    background: "transparent",
+    zIndex: "2147483647",
+    width: "20px",
+    height: "20px",
+  });
+  (document.body || document.documentElement).appendChild(host);
+  try { host.showPopover(); } catch {}
+  const r = field.getBoundingClientRect();
+  const size = Math.min(20, Math.max(14, r.height - 8));
+  host.style.width = `${size}px`;
+  host.style.height = `${size}px`;
+  host.style.left = `${r.right - size - 6}px`;
+  host.style.top = `${r.top + (r.height - size) / 2}px`;
+  iconHost = host;
 }
 
 async function deviceLabel() {
@@ -1010,6 +1306,11 @@ function isAllowlistedLoginHost(host) {
 }
 
 function frameIsSafe() {
+  try {
+    if (!location.hostname || location.origin === "null") return false;
+  } catch {
+    return false;
+  }
   if (window === window.top) return true;
   if (isAllowlistedLoginHost(location.hostname)) return true;
   try {
@@ -1020,17 +1321,24 @@ function frameIsSafe() {
 }
 
 async function onFocusIn(e) {
+  if (hostInList(location.hostname, pbSettings.blockedDomains)) return;
   // focusin from inside a shadow root retargets to the host, composedPath has the real input
   const field = (e.composedPath ? e.composedPath()[0] : null) || e.target;
   if (field instanceof HTMLInputElement && field.type === "password") everPassword.add(field);
   if (field instanceof HTMLInputElement && isOtpField(field) && isVisible(field)) {
-    if (frameIsSafe()) buildOneTimeCodeSuggestion(field);
+    if (!frameIsSafe() || pbSettings.inlineMenuVisibility === "off") return;
+    placeFieldIcon(field);
+    if (pbSettings.inlineMenuVisibility === "on-click") return;
+    buildOneTimeCodeSuggestion(field);
     return;
   }
   if (!(field instanceof HTMLInputElement) || !isLoginField(field)) {
+    removeIcon();
     return;
   }
-  if (!frameIsSafe()) return;
+  if (!frameIsSafe() || pbSettings.inlineMenuVisibility === "off") return;
+  placeFieldIcon(field);
+  if (pbSettings.inlineMenuVisibility === "on-click") return;
   // still offer on a pre-filled field (apple/chrome do), only stay quiet if we just filled it
   const v = (field.value || "").trim();
   if (v) {
@@ -1058,7 +1366,7 @@ document.addEventListener(
   "focusout",
   (e) => {
     if (!suggestionEl || e.target !== anchorField) return;
-    if (e.relatedTarget && suggestionEl.contains(e.relatedTarget)) return;
+    if (e.relatedTarget && (suggestionEl.contains(e.relatedTarget) || suggestionHost?.contains(e.relatedTarget) || e.relatedTarget === iconHost)) return;
     removeSuggestion();
   },
   true,
@@ -1067,7 +1375,7 @@ document.addEventListener(
   "mousedown",
   (e) => {
     if (!suggestionEl) return;
-    if (suggestionEl.contains(e.target)) return;
+    if (suggestionEl?.contains(e.target) || suggestionHost?.contains(e.target) || e.target === suggestionHost || e.target === iconHost) return;
     if (e.target === anchorField) return;
     // another login field's focusin rebuilds the offer, closing here first would race
     if (e.target instanceof HTMLInputElement && isLoginField(e.target)) return;
@@ -1179,7 +1487,7 @@ async function maybeOfferSave(scope) {
     lastAutofill.password === cred.password &&
     Date.now() - lastAutofill.at < 300000
   ) {
-    console.debug("[Open Passwords] save skipped: recently autofilled");
+    console.debug("[PassBridge] save skipped: recently autofilled");
     return;
   }
 
@@ -1198,7 +1506,7 @@ async function maybeOfferSave(scope) {
     pwInputs.some((p) => (p.getAttribute("autocomplete") || "").toLowerCase().includes("new-password"));
 
   // fire and forget, awaiting would let a navigating submit kill us
-  console.debug("[Open Passwords] handing save to background", {
+  console.debug("[PassBridge] handing save to background", {
     host: location.hostname,
     user: cred.username || "(none)",
     generated,
@@ -1245,3 +1553,33 @@ document.addEventListener(
   },
   true,
 );
+
+try {
+  const menuPort = chrome.runtime.connect({ name: "autofill-inline-menu-list-port" });
+  menuPort.onMessage.addListener((msg) => {
+    if (msg?.command === "init" && anchorField) {
+      const r = anchorField.getBoundingClientRect();
+      const shift = frameShift();
+      menuPort.postMessage({
+        command: "fieldRect",
+        portKey: msg.portKey,
+        rect: { x: r.left + shift.x, y: r.top + shift.y, width: r.width, height: r.height },
+      });
+    }
+  });
+} catch {}
+
+if (window === window.top) {
+  const tryPageLoadFill = () => {
+    if (!pbSettings.autofillOnPageLoad || !frameIsSafe()) return;
+    chrome.runtime.sendMessage({ type: "inlineLogins" }).then((res) => {
+      if (!res?.ok || res.locked || res.logins?.length !== 1) return;
+      const field = Array.from(document.querySelectorAll("input")).find((i) => isVisible(i) && isLoginField(i));
+      if (!field || (field.value || "").trim()) return;
+      fillAnchor = field;
+      chrome.runtime.sendMessage({ type: "inlineFill", loginName: res.logins[0] }).catch(() => {});
+    }).catch(() => {});
+  };
+  if (document.readyState === "complete") tryPageLoadFill();
+  else window.addEventListener("load", tryPageLoadFill, { once: true });
+}

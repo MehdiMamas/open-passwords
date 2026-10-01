@@ -83,7 +83,7 @@ def _elevate_reg(delete):
     # with the runas verb shows one UAC prompt, the same idea as the macOS profile approval.
     if os.environ.get("OPENPASSWORDS_NO_ELEVATE"):
         raise PermissionError("policies key is locked")
-    folder = os.path.join(os.environ.get("LOCALAPPDATA", "."), "OpenPasswords")
+    folder = os.path.join(os.environ.get("LOCALAPPDATA", "."), "PassBridge")
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, "password-manager.reg")
     with open(path, "w", encoding="utf-8", newline="") as handle:
