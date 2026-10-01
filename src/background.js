@@ -215,6 +215,71 @@ function uniqueByUsername(logins) {
   });
 }
 
+// parent or child only. a bare TLD is not a site, and notaugustana.edu does not match augustana.edu
+function hostsRelated(frameHost, siteHost) {
+  if (!frameHost || !siteHost || frameHost === siteHost) return false;
+  if (!frameHost.includes(".") || !siteHost.includes(".")) return false;
+  return frameHost.endsWith("." + siteHost) || siteHost.endsWith("." + frameHost);
+}
+
+function hostOfSite(site) {
+  const raw = String(site || "").trim();
+  if (!raw) return null;
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function siteHosts(sites) {
+  const raw = Array.isArray(sites) ? sites : sites ? [sites] : [];
+  const out = [];
+  for (const s of raw) {
+    const text = typeof s === "string" ? s : s?.url || s?.URL || s?.host || "";
+    const h = hostOfSite(text);
+    if (h && !out.includes(h)) out.push(h);
+  }
+  return out;
+}
+
+function bestRelatedHost(frameHost, sites) {
+  const hosts = siteHosts(sites).filter((h) => hostsRelated(frameHost, h));
+  const parents = hosts.filter((h) => frameHost.endsWith("." + h)).sort((a, b) => b.length - a.length);
+  if (parents.length) return parents[0];
+  const children = hosts.filter((h) => h.endsWith("." + frameHost)).sort((a, b) => a.length - b.length);
+  return children[0] || null;
+}
+
+function framePathUrl(frameUrl) {
+  const u = new URL(frameUrl);
+  u.hash = "";
+  u.search = "";
+  return u.href;
+}
+
+// hostname first, then the full path when the helper supports it, then one related site from our own name list
+async function readPasswordForFrame(tabId, frameUrl, username) {
+  const host = registrableHost(frameUrl);
+  const tried = [];
+  const attempt = async (queryUrl) => {
+    if (!queryUrl || tried.includes(queryUrl)) return null;
+    tried.push(queryUrl);
+    return client.getPasswordForLoginName(tabId, frameUrl, { username }, queryUrl === host ? undefined : queryUrl);
+  };
+  let cred = await attempt(host);
+  if (!cred && client.capabilities?.supportsSubURLs) cred = await attempt(framePathUrl(frameUrl));
+  if (!cred) {
+    const logins = await client.getLoginNamesForURL(tabId, frameUrl);
+    const match = (logins || []).find((l) => normUsername(l.username) === normUsername(username));
+    const related = bestRelatedHost(host, match?.sites);
+    if (related) cred = await attempt(related);
+  }
+  if (!cred) console.info("[PassBridge] passwordRead", { status: "no credential", host, tried });
+  else if (tried.length > 1) console.info("[PassBridge] passwordRead", { status: "ok", host, tried });
+  return { cred, tried };
+}
+
 const lastFillByTab = new Map();
 
 // re-filling the same login skips a second Touch ID, apple prompts every read
@@ -376,7 +441,7 @@ async function cycleFill(tab) {
   cycleByTab.set(tab.id, i + 1);
   let cred = pwCacheGet(host, login.username);
   if (!cred) {
-    cred = await client.getPasswordForLoginName(tab.id, tab.url, { username: login.username });
+    cred = (await readPasswordForFrame(tab.id, tab.url, login.username)).cred;
     if (cred) pwCacheSet(host, cred);
   }
   if (!cred) return;
@@ -622,12 +687,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const safeLogin = { username: msg.loginName?.username };
           let cred = pwCacheGet(host, safeLogin.username);
           if (!cred) {
-            cred = await client.getPasswordForLoginName(sender.tab.id, frameUrl, safeLogin);
+            try {
+              const read = await readPasswordForFrame(sender.tab.id, frameUrl, safeLogin.username);
+              cred = read.cred;
+              if (!cred) console.info("[PassBridge] inlineFill", { status: "no credential", host, tried: read.tried });
+            } catch (e) {
+              const error = String(e?.message ?? e);
+              console.info("[PassBridge] inlineFill", { status: "helper error", host, error });
+              return sendResponse({ ok: false, filled: false, error });
+            }
             if (cred) pwCacheSet(host, cred);
           }
-          let filled = false;
-          if (cred) {
-            const resp = await chrome.tabs.sendMessage(
+          if (!cred) {
+            return sendResponse({
+              ok: false,
+              filled: false,
+              error: "Couldn't read the password for this site.",
+            });
+          }
+          let resp;
+          try {
+            resp = await chrome.tabs.sendMessage(
               sender.tab.id,
               {
                 type: "fill",
@@ -637,13 +717,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               },
               { frameId },
             );
-            filled = !!resp?.filled;
-            if (filled) {
-              recordMru(host, cred.username);
-              lastFillByTab.set(sender.tab.id, { host, username: cred.username });
-            }
+          } catch (e) {
+            const error = String(e?.message ?? e);
+            console.info("[PassBridge] inlineFill", { status: "fill message failed", host, error });
+            return sendResponse({ ok: false, filled: false, error });
           }
-          sendResponse({ ok: true, filled });
+          const filled = !!resp?.filled;
+          if (filled) {
+            recordMru(host, cred.username);
+            lastFillByTab.set(sender.tab.id, { host, username: cred.username });
+            sendResponse({ ok: true, filled: true });
+            break;
+          }
+          const status = resp?.error || "no fields";
+          console.info("[PassBridge] inlineFill", { status, host });
+          sendResponse({
+            ok: false,
+            filled: false,
+            error: status === "no fields" ? "Couldn't fill this page." : status,
+          });
           break;
         }
 
@@ -955,7 +1047,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           let cred = pwCacheGet(host, msg.loginName?.username);
           if (!cred) {
-            cred = await client.getPasswordForLoginName(tab.id, tab.url, msg.loginName);
+            cred = (await readPasswordForFrame(tab.id, tab.url, msg.loginName?.username)).cred;
             if (cred) pwCacheSet(host, cred);
           }
           let filled = false;

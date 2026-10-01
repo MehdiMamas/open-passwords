@@ -1,6 +1,6 @@
 # Registers the iCloud password helper for Chromium browsers on Windows, plus the
 # PassBridge policy and pairing-code hosts. Run once from this folder:
-#   powershell -ExecutionPolicy Bypass -File .\native\windows\install.ps1
+#   powershell -ExecutionPolicy Bypass -File ./native/windows/install.ps1
 $ErrorActionPreference = "Stop"
 
 $ExtId = "pejdijmoenmkgeppbflobdenhhabjlaj"

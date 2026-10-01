@@ -267,8 +267,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   fillCredentials(msg.username, msg.password, liveField(fillAnchor)).then((filled) => {
     // a submit right after must not re-offer to save this existing login
-    if (filled) lastAutofill = { host: location.hostname, username: msg.username, password: msg.password, at: Date.now() };
-    sendResponse({ ok: true, filled });
+    if (filled) {
+      lastAutofill = { host: location.hostname, username: msg.username, password: msg.password, at: Date.now() };
+      sendResponse({ ok: true, filled: true });
+      return;
+    }
+    sendResponse({ ok: true, filled: false, error: "no fields" });
   }).catch((err) => {
     sendResponse({ ok: false, filled: false, error: String(err?.message ?? err) });
   });
@@ -1046,9 +1050,12 @@ function appendLoginRows(box, field, logins) {
         return;
       }
       busy = false;
-      hint.textContent = "Couldn't fill this page.";
+      hint.textContent = res?.error || "Couldn't fill this page.";
       hint.style.color = "#ff453a";
       hint.style.fontWeight = "500";
+      hint.style.whiteSpace = "normal";
+      hint.style.textAlign = "right";
+      hint.style.maxWidth = "12em";
       positionBox();
     });
     box.appendChild(row);

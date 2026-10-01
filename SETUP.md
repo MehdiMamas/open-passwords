@@ -63,11 +63,13 @@ npm run build
 2. Turn on Developer mode.
 3. Load unpacked and choose the `dist` folder.
 4. Confirm the id is `pejdijmoenmkgeppbflobdenhhabjlaj`.
-5. Register Apple's helper for Chrome. From the repo root:
+5. Register Apple's helper for Chrome. From the repo root, in Git Bash or PowerShell:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\native\windows\install.ps1
+```bash
+powershell -ExecutionPolicy Bypass -File ./native/windows/install.ps1
 ```
+
+Git Bash strips unquoted backslashes, so `.\native\windows\install.ps1` becomes `.nativewindowsinstall.ps1` and PowerShell cannot find the file. Forward slashes work in both shells.
 
 6. Fully quit Chrome (check the tray) and reopen it.
 7. Click the toolbar icon and type the 6-digit code iCloud for Windows shows. If the popup closes when the code appears, click the toolbar icon again. Windows Hello may ask when a password is read.

@@ -388,16 +388,17 @@ export class ApplePasswords {
     });
   }
 
-  async getPasswordForLoginName(tabId, url, loginName) {
+  async getPasswordForLoginName(tabId, url, loginName, queryUrl) {
     if (!this.ready) throw new Error("not unlocked");
     const { hostname } = new URL(url);
+    // envelope stays the frame host. queryUrl is a full path or a related site the background chose.
+    const searchUrl = queryUrl || hostname;
     return this._withLock(async () => {
       const res = await this._encryptedQuery(
         Command.GET_PASSWORD_FOR_LOGIN_NAME,
         tabId,
-        // query by frame hostname, never loginName.sites which a page could point at another origin
         hostname,
-        { ACT: Action.SEARCH, URL: hostname, USR: loginName.username },
+        { ACT: Action.SEARCH, URL: searchUrl, USR: loginName.username },
         null, // no timeout, helper may require Touch ID here
       );
       if (res.STATUS === QueryStatus.Success) {
