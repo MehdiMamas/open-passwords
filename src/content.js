@@ -12,7 +12,7 @@ function hitsUpstreamName(el) {
 }
 
 // OTP inputs are never fillable login fields, that misclassification is apple's balloon-on-every-OTP bug
-console.log("[PassBridge] content script v0.50.0 loaded");
+console.log("[PassBridge] content script v1.0.0 loaded");
 
 const PB_DEFAULTS = {
   inlineMenuVisibility: "on-focus",
