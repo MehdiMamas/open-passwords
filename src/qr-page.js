@@ -174,10 +174,13 @@ export function showTotpBar(payload) {
       account: payload.account || "",
       usernames: payload.usernames || [],
       error: payload.error || "",
+      filled: !!payload.filled,
+      detail: payload.detail || "",
     }, "*");
   };
   iframe.addEventListener("load", paint);
   iframe.src = chrome.runtime.getURL(`overlay/totp-bar.html?token=${token}`);
+  let pending = false;
   const onMsg = (e) => {
     if (e.source !== iframe.contentWindow || e.data?.token !== token) return;
     if (e.data.action === "ready") {
@@ -190,13 +193,20 @@ export function showTotpBar(payload) {
       host.style.height = `${h}px`;
       return;
     }
+    if (pending) return;
     const action = e.data.action;
-    hideTotpBar();
     if (action === "choose" || action === "create") {
-      chrome.runtime.sendMessage({ type: "confirmTotp" }).catch(() => {});
-    } else {
-      chrome.runtime.sendMessage({ type: "dismissTotp" }).catch(() => {});
+      pending = true;
+      chrome.runtime.sendMessage({ type: "confirmTotp" }, (resp) => {
+        void chrome.runtime.lastError;
+        showTotpBar(resp?.ok
+          ? { mode: "copied", filled: !!resp.filled, detail: resp.detail || "" }
+          : { mode: "error", error: resp?.error || "Couldn't add a verification code." });
+      });
+      return;
     }
+    hideTotpBar();
+    chrome.runtime.sendMessage({ type: "dismissTotp" }).catch(() => {});
   };
   totpOnMsg = onMsg;
   window.addEventListener("message", onMsg);

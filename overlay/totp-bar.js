@@ -55,6 +55,19 @@ function render(data) {
     requestAnimationFrame(reportHeight);
     return;
   }
+  if (data.mode === "copied") {
+    root.append(
+      line(data.filled ? "Verification code added" : "Setup key copied", "font-weight:650;margin-bottom:4px"),
+      line(data.detail || "Paste it in Passwords if the app did not take it.", "opacity:.7;margin-bottom:12px"),
+    );
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;justify-content:flex-end";
+    row.append(button("OK", "cancel", true));
+    root.append(row);
+    reportHeight();
+    requestAnimationFrame(reportHeight);
+    return;
+  }
   if (data.mode === "empty") {
     root.append(
       line("No saved login for this site", "font-weight:650;margin-bottom:4px"),

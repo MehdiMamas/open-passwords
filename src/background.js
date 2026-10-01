@@ -7,7 +7,7 @@ import { getSettings, hostBlocked } from "./settings.js";
 import { INLINE_MENU_PORTS, portKeyForTab } from "./adapter/ports.js";
 import { generateLoginFillScript } from "./adapter/fill-script.js";
 import { generateApplePassword } from "./password-generate.js";
-import { parseOtpAuth } from "./otpauth.js";
+import { otpAuthSecret, parseOtpAuth } from "./otpauth.js";
 import { passwordSearchSteps } from "./session/password-search.js";
 
 const client = createClient();
@@ -35,6 +35,7 @@ client.onStateChange((s) => {
 // one attempt per challenge, never a retry loop, a wrong read burns the code. only when the
 // user asks for a code (popup, unlock click), never at browser launch
 const AUTOPAIR_HOST = "com.passbridge.autopair";
+const TOTP_SETUP_HOST = "com.passbridge.totpsetup";
 let autoPairBusy = false;
 let autoPairError = null;
 
@@ -526,7 +527,63 @@ async function copyText(text) {
   const settings = await getSettings();
   const clearMs = Number(settings.clipboardClearMs) || 0;
   await ensureOffscreen();
-  chrome.runtime.sendMessage({ type: "offscreenCopy", text: text || "", clearMs }).catch(() => {});
+  await chrome.runtime.sendMessage({ type: "offscreenCopy", text: text || "", clearMs }).catch(() => {});
+}
+
+function totpSetupMsg(body) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendNativeMessage(TOTP_SETUP_HOST, body, (r) => {
+        if (chrome.runtime.lastError || !r || typeof r !== "object") {
+          resolve({ ok: false, filled: false, reason: "helper" });
+          return;
+        }
+        resolve({ ok: !!r.ok, filled: !!r.filled, reason: typeof r.reason === "string" ? r.reason : "" });
+      });
+    } catch {
+      resolve({ ok: false, filled: false, reason: "helper" });
+    }
+  });
+}
+
+function totpResultDetail(res) {
+  if (res?.filled) return "Passwords has the key on the matching login.";
+  if (res?.reason === "many") return "More than one login matched. The setup key is on the clipboard.";
+  return "Setup key copied. Paste it in Passwords if the app did not take it.";
+}
+
+async function handOffTotp(offer) {
+  const secret = otpAuthSecret(offer?.uri);
+  const copiedDetail = secret ? totpResultDetail({}) : "Couldn't copy a setup key.";
+  try {
+    if (secret) await copyText(secret);
+    await ensureConnected();
+    client.launchPasswordsApp({ totpUri: offer.uri, totpPageUrl: offer.pageUrl });
+  } catch {
+    return { ok: true, copied: !!secret, filled: false, detail: copiedDetail };
+  }
+  let filled = false;
+  let reason = "";
+  await platformReady;
+  if (platformOs === "win" && secret) {
+    const res = await totpSetupMsg({
+      action: "attach",
+      secret,
+      issuer: offer.issuer || "",
+      account: offer.account || "",
+      host: registrableHost(offer.pageUrl || "") || "",
+      usernames: Array.isArray(offer.usernames) ? offer.usernames.slice(0, 8) : [],
+      timeoutMs: 15000,
+    });
+    filled = !!res?.filled;
+    reason = typeof res?.reason === "string" ? res.reason : "";
+  }
+  return {
+    ok: true,
+    copied: !!secret,
+    filled,
+    detail: secret ? totpResultDetail({ filled, reason }) : "Couldn't copy a setup key.",
+  };
 }
 
 async function showTotpBar(tabId, payload) {
@@ -609,7 +666,13 @@ async function presentTotpOffer(tab, parsed) {
     logins = [];
   }
   const usernames = logins.map((login) => login.username || "(no username)").slice(0, 8);
-  totpOffers.set(tab.id, { uri: parsed.uri, pageUrl: tab.url });
+  totpOffers.set(tab.id, {
+    uri: parsed.uri,
+    pageUrl: tab.url,
+    issuer: parsed.issuer,
+    account: parsed.account,
+    usernames,
+  });
   const shown = await showTotpBar(tab.id, {
     mode: usernames.length ? "matches" : "empty",
     issuer: parsed.issuer,
@@ -1019,9 +1082,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const offer = sender.tab?.id != null ? totpOffers.get(sender.tab.id) : null;
           if (sender.tab?.id != null) totpOffers.delete(sender.tab.id);
           if (!offer) return sendResponse({ ok: false, error: "nothing to add" });
-          await ensureConnected();
-          client.launchPasswordsApp({ totpUri: offer.uri, totpPageUrl: offer.pageUrl });
-          sendResponse({ ok: true });
+          sendResponse(await handOffTotp(offer));
           break;
         }
 
@@ -1148,7 +1209,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await ensureConnected();
           if (msg.mode === "totp") {
             if (!msg.uri || !/^(apple-)?otpauth:\/\//i.test(msg.uri)) return sendResponse({ ok: false, error: "no otpauth URI" });
-            client.launchPasswordsApp({ totpUri: msg.uri, totpPageUrl: url });
+            const parsed = parseOtpAuth(msg.uri);
+            let usernames = [];
+            if (tab?.id && url && client.ready) {
+              try {
+                usernames = uniqueByUsername(await client.getLoginNamesForURL(tab.id, url))
+                  .map((login) => login.username || "")
+                  .filter(Boolean)
+                  .slice(0, 8);
+              } catch {}
+            }
+            sendResponse(await handOffTotp({
+              uri: msg.uri,
+              pageUrl: url,
+              issuer: parsed?.issuer || "",
+              account: parsed?.account || "",
+              usernames,
+            }));
+            break;
           } else if (msg.mode === "new") {
             client.launchPasswordsApp({ newPasswordUrl: url });
           } else {

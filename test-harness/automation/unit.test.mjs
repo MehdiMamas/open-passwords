@@ -1,6 +1,6 @@
 import { generateLoginFillScript } from "../../src/adapter/fill-script.js";
 import { INLINE_MENU_PORTS, portKeyForTab } from "../../src/adapter/ports.js";
-import { parseOtpAuth } from "../../src/otpauth.js";
+import { otpAuthSecret, parseOtpAuth } from "../../src/otpauth.js";
 import { generateApplePassword } from "../../src/password-generate.js";
 import { hostsRelated, passwordSearchSteps } from "../../src/session/password-search.js";
 
@@ -46,6 +46,8 @@ ok(
 
 const otp = parseOtpAuth("otpauth://totp/GitHub:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=GitHub");
 ok("otpauth keeps issuer and account and hides the secret from the label", otp?.issuer === "GitHub" && otp?.account === "alice@example.com" && !("secret" in otp));
+ok("setup key is the base32 secret without padding", otpAuthSecret(otp.uri) === "JBSWY3DPEHPK3PXP" && otpAuthSecret("otpauth://totp/Work?secret=JBSWY3DPEHPK3PXP====") === "JBSWY3DPEHPK3PXP");
+ok("a non-setup link has no setup key", otpAuthSecret("https://example.com/?secret=JBSWY3DPEHPK3PXP") === "");
 ok("wifi and migration QR codes are not setup links", parseOtpAuth("WIFI:S:cafe;T:WPA;P:secret;;") === null && parseOtpAuth("otpauth-migration://offline?data=abc") === null);
 ok("apple-otpauth totp is accepted", parseOtpAuth("apple-otpauth://totp/Work?secret=JBSWY3DPEHPK3PXP&issuer=Work")?.account === "Work");
 const generated = generateApplePassword();

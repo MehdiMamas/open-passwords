@@ -24,6 +24,20 @@ export function parseOtpAuth(raw) {
   return { uri: s, issuer, account };
 }
 
+// base32 setup key only. Callers copy or hand this to the Windows helper; it is not a label.
+export function otpAuthSecret(raw) {
+  const parsed = parseOtpAuth(raw);
+  if (!parsed) return "";
+  let secret = "";
+  try {
+    secret = new URL(parsed.uri).searchParams.get("secret") || "";
+  } catch {
+    return "";
+  }
+  if (!/^[A-Za-z2-7]+=*$/.test(secret) || secret.replace(/=+$/, "").length < 8) return "";
+  return secret.replace(/=+$/, "");
+}
+
 function safeDecode(s) {
   try {
     return decodeURIComponent(s);

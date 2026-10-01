@@ -6,14 +6,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "offscreenCopy") {
     const text = String(msg.text || "");
     const clearMs = Number(msg.clearMs) || 0;
-    navigator.clipboard.writeText(text).catch(() => {});
-    if (timer) clearTimeout(timer);
-    if (clearMs > 0) {
-      timer = setTimeout(() => {
-        navigator.clipboard.writeText("").catch(() => {});
-      }, clearMs);
-    }
-    return false;
+    navigator.clipboard.writeText(text).then(() => {
+      if (timer) clearTimeout(timer);
+      if (clearMs > 0) {
+        timer = setTimeout(() => {
+          navigator.clipboard.writeText("").catch(() => {});
+        }, clearMs);
+      }
+      sendResponse({ ok: true });
+    }).catch(() => sendResponse({ ok: false }));
+    return true;
   }
   if (msg?.type !== "offscreenDecodeQr") return false;
   decodeQr(msg.dataUrl, msg.rect)

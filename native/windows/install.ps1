@@ -103,6 +103,8 @@ if (-not $py) {
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 Copy-Item -Force (Join-Path $Here "passbridge-policy.py") (Join-Path $Dest "passbridge-policy.py")
 Copy-Item -Force (Join-Path $Here "passbridge-autopair.py") (Join-Path $Dest "passbridge-autopair.py")
+Copy-Item -Force (Join-Path $Here "passbridge-totpsetup.py") (Join-Path $Dest "passbridge-totpsetup.py")
+Copy-Item -Force (Join-Path $Here "passbridge-totpsetup.ps1") (Join-Path $Dest "passbridge-totpsetup.ps1")
 
 function Write-HostCmd([string]$ScriptName, [string]$CmdName) {
   $cmdPath = Join-Path $Dest $CmdName
@@ -117,6 +119,7 @@ function Write-HostCmd([string]$ScriptName, [string]$CmdName) {
 
 $policyCmd = Write-HostCmd "passbridge-policy.py" "passbridge-policy.cmd"
 $pairCmd = Write-HostCmd "passbridge-autopair.py" "passbridge-autopair.cmd"
+$totpCmd = Write-HostCmd "passbridge-totpsetup.py" "passbridge-totpsetup.cmd"
 
 function Write-NmManifest([string]$Name, [string]$Description, [string]$ExePath) {
   $file = Join-Path $Dest "$Name.json"
@@ -133,10 +136,12 @@ function Write-NmManifest([string]$Name, [string]$Description, [string]$ExePath)
 
 $policyManifest = Write-NmManifest "com.passbridge.policy" "PassBridge policy helper" $policyCmd
 $pairManifest = Write-NmManifest "com.passbridge.autopair" "PassBridge pairing-code reader" $pairCmd
+$totpManifest = Write-NmManifest "com.passbridge.totpsetup" "PassBridge verification-code setup helper" $totpCmd
 
 foreach ($root in $browsers) {
   Set-Default (Join-Path $root "com.passbridge.policy") $policyManifest
   Set-Default (Join-Path $root "com.passbridge.autopair") $pairManifest
+  Set-Default (Join-Path $root "com.passbridge.totpsetup") $totpManifest
   foreach ($old in @("com.openpasswords.policy", "com.openpasswords.autopair")) {
     $oldKey = Join-Path $root $old
     if (Test-Path -LiteralPath $oldKey) { Remove-Item -LiteralPath $oldKey -Force }

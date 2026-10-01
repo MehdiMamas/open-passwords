@@ -80,7 +80,7 @@ The installer points Chrome at the WindowsApps alias for `iCloudPasswordsExtensi
 
 `native/windows/uninstall.ps1` removes the PassBridge host keys and the older `com.openpasswords.*` keys. It does not remove iCloud for Windows.
 
-Python is only needed for the policy toggle and the pairing-code reader. Filling passwords does not need Python. If the pairing toast does not expose its text, type the code.
+Python is needed for the policy toggle, the pairing-code reader, and the verification-code setup helper. Filling passwords does not need Python. If the pairing toast does not expose its text, type the code. If Passwords does not take a scanned setup key, it is copied so you can paste it.
 
 ## Is it working?
 
