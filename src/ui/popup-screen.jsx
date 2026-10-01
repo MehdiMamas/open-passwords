@@ -56,6 +56,7 @@ export function PopupScreen({
   codes,
   caps,
   note,
+  noteTone,
   pinError,
   showFavicons,
   onVerify,
@@ -65,6 +66,7 @@ export function PopupScreen({
   onCopy,
   onLookup,
   onOpenApp,
+  onLock,
   onNewLogin,
   onSetupTotp,
   onRefresh,
@@ -202,7 +204,9 @@ export function PopupScreen({
                 ))}
               </ul>
             )}
-            {note && <p className="text-xs text-ok">{note}</p>}
+            {note && (
+              <p className={`text-xs ${noteTone === "danger" ? "text-danger" : noteTone === "ok" ? "text-ok" : "opacity-70"}`}>{note}</p>
+            )}
             <div className="flex flex-col items-start">
               <button type="button" className="py-1 text-xs text-accent" onClick={() => onOpenApp("search")}>
                 Open in Passwords app
@@ -221,7 +225,14 @@ export function PopupScreen({
           </>
         )}
       </main>
-      <footer className="border-t border-[color-mix(in_srgb,CanvasText_12%,Canvas)] px-3 py-2">
+      <footer className="flex items-center justify-between border-t border-[color-mix(in_srgb,CanvasText_12%,Canvas)] px-3 py-2">
+        {state === "unlocked" ? (
+          <button type="button" className="text-xs text-accent" onClick={onLock}>
+            Lock
+          </button>
+        ) : (
+          <span />
+        )}
         <button type="button" className="text-xs text-accent" onClick={onSettings}>
           Settings
         </button>

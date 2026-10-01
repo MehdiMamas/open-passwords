@@ -1,8 +1,16 @@
 import { build } from "esbuild";
-import { cp, mkdir, rm } from "fs/promises";
+import { cp, mkdir, readdir, rm } from "fs/promises";
 import { execFileSync } from "child_process";
 
-await rm("dist", { recursive: true, force: true });
+// Chrome holds the unpacked-extension root open on Windows, so rmdir(dist) is EBUSY
+// while the files inside can still be replaced.
+try {
+  await rm("dist", { recursive: true, force: true });
+} catch (err) {
+  if (err?.code !== "EBUSY" && err?.code !== "EPERM") throw err;
+  const entries = await readdir("dist").catch(() => []);
+  await Promise.all(entries.map((name) => rm(`dist/${name}`, { recursive: true, force: true })));
+}
 await mkdir("dist", { recursive: true });
 
 for (const item of ["manifest.json", "src", "icons", "overlay", "fonts"]) {

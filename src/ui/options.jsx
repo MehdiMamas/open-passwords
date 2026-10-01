@@ -187,7 +187,7 @@ function OptionsApp() {
                 return;
               }
               const r = await send({ type: "autoPairCheck" });
-              setAutoNote(r?.ok ? "on" : r?.error || "the reader could not reach the pairing window");
+              setAutoNote(r?.ok ? "Pairing code reader is available." : r?.error || "the reader could not reach the pairing window");
             }}
           />
         </Row>

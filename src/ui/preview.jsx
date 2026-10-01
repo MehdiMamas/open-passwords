@@ -36,6 +36,7 @@ function Frame({ title, scheme, props }) {
         onCopy={noop}
         onLookup={noop}
         onOpenApp={noop}
+        onLock={noop}
         onNewLogin={noop}
         onSetupTotp={noop}
         onRefresh={noop}

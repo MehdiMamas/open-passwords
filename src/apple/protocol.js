@@ -191,8 +191,8 @@ export class ApplePasswords {
       w.resolve(message);
     }
     if (message.cmd === Command.PASSWORDS_DISABLED || message.cmd === Command.RELOGIN_NEEDED) {
-      this.session = undefined;
-      this._setState(State.NeedsPin);
+      // the helper invalidated this handshake; a live port with no session can never pair again
+      this._dropNativePort();
     }
     if (message.cmd === Command.ONE_TIME_CODE_AVAILABLE && !w) {
       try {
@@ -202,9 +202,10 @@ export class ApplePasswords {
   }
 
   // never resets an unlocked session, apple's extension re-pairs on every connect
-  async connect() {
-    if (this.port) return;
-    return new Promise((resolve, reject) => {
+  connect() {
+    if (this.port) return Promise.resolve();
+    if (this._connectPending) return this._connectPending;
+    const pending = new Promise((resolve, reject) => {
       let port;
       try {
         port = chrome.runtime.connectNative(NATIVE_HOST);
@@ -216,9 +217,17 @@ export class ApplePasswords {
 
       port.onMessage.addListener((msg) => this._dispatch(msg));
       port.onDisconnect.addListener(() => {
+        const owned = this.port === port;
+        if (owned) {
+          this.port = undefined;
+          this.session = undefined;
+        }
+        if (this._dropping) {
+          this._dropping = false;
+          return;
+        }
+        if (!owned) return;
         const err = chrome.runtime.lastError?.message;
-        this.port = undefined;
-        this.session = undefined;
         if (err && /not found|forbidden|host/i.test(err)) this._setState(State.NoHelper);
         else this._setState(State.Disconnected);
       });
@@ -239,6 +248,11 @@ export class ApplePasswords {
         })
         .catch(reject);
     });
+    this._connectPending = pending;
+    pending.finally(() => {
+      if (this._connectPending === pending) this._connectPending = undefined;
+    });
+    return pending;
   }
 
   // the code on the Mac only belongs to the newest challenge
@@ -252,9 +266,30 @@ export class ApplePasswords {
     );
   }
 
+  // helper said the session is dead: drop the port so the next connect() can handshake
+  _dropNativePort() {
+    const port = this.port;
+    this.port = undefined;
+    this.session = undefined;
+    if (port) {
+      this._dropping = true;
+      try { port.disconnect(); } catch (_) {}
+    }
+    this._setState(State.Disconnected);
+  }
+
   // ifNeeded keeps a live prompt, a second code on screen invalidates the one the user is reading
   requestChallenge({ ifNeeded = false } = {}) {
-    if (!this.session) return Promise.reject(new Error("not connected"));
+    if (!this.session) {
+      if (this._connectPending) {
+        return this._connectPending.then(() => this.requestChallenge({ ifNeeded }));
+      }
+      if (this.port) this._dropNativePort();
+      return this.connect().then(() => {
+        if (!this.session) return Promise.reject(new Error("not connected"));
+        return this.requestChallenge({ ifNeeded });
+      });
+    }
     if (ifNeeded && (this.hasChallenge || this.state === State.Unlocked)) return Promise.resolve(false);
     // two prompts would race and only the last code works
     if (this._challengePending) return this._challengePending;

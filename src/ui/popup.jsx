@@ -12,13 +12,21 @@ function PopupApp() {
   const [codes, setCodes] = useState([]);
   const [caps, setCaps] = useState({});
   const [note, setNote] = useState("");
+  const [noteTone, setNoteTone] = useState("");
   const [pinError, setPinError] = useState("");
   const [showFavicons, setShowFavicons] = useState(true);
   const [tab, setTab] = useState(null);
+  const [lookupUrl, setLookupUrl] = useState(null);
+
+  function showNote(text, tone) {
+    setNote(text || "");
+    setNoteTone(tone || "");
+  }
 
   async function loadUnlocked() {
     const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
     setTab(active || null);
+    setLookupUrl(null);
     const host = active?.url ? new URL(active.url).hostname : "";
     setSite(host);
     const res = await send({ type: "getLogins", tabId: active?.id, url: active?.url });
@@ -33,25 +41,38 @@ function PopupApp() {
     if (next === "unlocked") await loadUnlocked();
   }
 
+  async function bootFrom(res) {
+    if (!res) return;
+    if (res.os) setOs(res.os);
+    if (res.label) setLabel(res.label);
+    setShowFavicons(res.settings?.showFavicons !== false);
+    setCaps(res.caps || {});
+    let next = res.state || "connecting";
+    if (next === "disconnected") next = "connecting";
+    if (next === "needs_pin") {
+      const ch = await send({ type: "requestChallenge", ifNeeded: true });
+      next = ch?.state || next;
+    }
+    await applyState(next, res.caps);
+  }
+
   useEffect(() => {
     let dead = false;
     (async () => {
       const res = await send({ type: "getState" });
       if (dead || !res) return;
-      if (res.os) setOs(res.os);
-      if (res.label) setLabel(res.label);
-      setShowFavicons(res.settings?.showFavicons !== false);
-      setCaps(res.caps || {});
-      let next = res.state || "connecting";
-      if (next === "disconnected") next = "connecting";
-      if (next === "needs_pin") {
-        const ch = await send({ type: "requestChallenge", ifNeeded: true });
-        next = ch?.state || next;
-      }
-      await applyState(next, res.caps);
+      await bootFrom(res);
     })();
     const onMsg = (msg) => {
-      if (msg?.type === "state") applyState(msg.state);
+      if (msg?.type !== "state" || dead) return;
+      if (msg.state === "disconnected") {
+        setState("connecting");
+        send({ type: "getState" }).then((res) => {
+          if (!dead) bootFrom(res);
+        });
+        return;
+      }
+      applyState(msg.state);
     };
     chrome.runtime.onMessage.addListener(onMsg);
     return () => {
@@ -70,6 +91,7 @@ function PopupApp() {
       codes={codes}
       caps={caps}
       note={note}
+      noteTone={noteTone}
       pinError={pinError}
       showFavicons={showFavicons}
       onVerify={async (pin) => {
@@ -90,40 +112,69 @@ function PopupApp() {
         else await applyState(res.state);
       }}
       onFill={async (login) => {
-        const res = await send({ type: "fillOnPage", tabId: tab?.id, url: tab?.url, loginName: login });
+        const res = await send({ type: "fillOnPage", url: lookupUrl || undefined, loginName: login });
         if (res?.ok && res.filled) window.close();
-        else setNote(res?.error || "Couldn't find a login form on this page.");
+        else showNote(res?.error || "Couldn't find a login form on this page.", "danger");
       }}
       onFillCode={async (row) => {
         const res = await send({ type: "fillOneTimeCode", id: row.id });
         if (res?.ok && res.filled) window.close();
-        else if (!(res?.ok && res.code)) setNote(res?.error ? `Couldn't read the code: ${res.error}` : "Couldn't read the code");
+        else if (!(res?.ok && res.code)) showNote(res?.error ? `Couldn't read the code: ${res.error}` : "Couldn't read the code", "danger");
         return res;
       }}
-      onCopy={(field, login) => {
-        if (field === "otp") send({ type: "copyField", field: "otp", id: login.id });
-        else send({ type: "copyField", field, username: login.username });
+      onCopy={async (field, login) => {
+        const res = await send({
+          type: "copyField",
+          field,
+          username: login.username,
+          id: login.id,
+          url: field === "password" ? lookupUrl || undefined : undefined,
+        });
+        if (!res?.ok) showNote(res?.error || "nothing to copy", "danger");
+        else showNote("Copied", "ok");
       }}
       onLookup={async (raw) => {
         if (!raw) return;
         const res = await send({ type: "lookupLogins", url: raw });
-        setSite(res?.host || raw);
-        setLogins(res?.ok ? res.logins || [] : []);
+        if (!res?.ok) {
+          showNote(res?.error || "Couldn't look up that site.", "danger");
+          return;
+        }
+        const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+        setLookupUrl(url);
+        setSite(res.host || raw);
+        setLogins(res.logins || []);
+        const codeRes = await send({ type: "getOneTimeCodes", url });
+        setCodes(codeRes?.rows || []);
       }}
       onOpenApp={async (mode) => {
-        await send({ type: "openPasswordsApp", mode });
+        await send({ type: "openPasswordsApp", mode, url: mode === "search" ? lookupUrl || undefined : undefined });
         window.close();
+      }}
+      onLock={async () => {
+        await send({ type: "disconnect" });
+        setState("connecting");
+        const res = await send({ type: "getState" });
+        await bootFrom(res);
       }}
       onNewLogin={() => {}}
       onSetupTotp={async () => {
-        if (!tab?.id) return;
+        if (!tab?.id) {
+          showNote("no verification-code setup link on this page", "danger");
+          return;
+        }
         try {
           const found = await chrome.tabs.sendMessage(tab.id, { type: "findTotpUri" }, { frameId: 0 });
           const uri = found?.uris?.[0];
-          if (!uri) return;
+          if (!uri) {
+            showNote("no verification-code setup link on this page", "danger");
+            return;
+          }
           await send({ type: "openPasswordsApp", mode: "totp", uri });
           window.close();
-        } catch {}
+        } catch {
+          showNote("no verification-code setup link on this page", "danger");
+        }
       }}
       onRefresh={async () => {
         if (state === "needs_pin") {
@@ -134,7 +185,9 @@ function PopupApp() {
         }
         const res = await send({ type: "refreshAndRefill" });
         await loadUnlocked();
-        setNote(res?.refilled ? `Re-filled ${res.username} with the latest password` : "Passwords refreshed");
+        if (res?.refilled) showNote(`Re-filled ${res.username} with the latest password`, "ok");
+        else if (res?.reason === "none") showNote("Nothing to re-fill", "muted");
+        else showNote(res?.error || "Couldn't re-fill this page.", "danger");
       }}
       onSettings={() => chrome.runtime.openOptionsPage()}
     />

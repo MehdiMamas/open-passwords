@@ -181,8 +181,10 @@ function queuePendingSave(save) {
 async function flushPendingSaves() {
   if (!client.ready || !pendingSaves.length) return;
   const batch = pendingSaves.splice(0);
+  const settings = await getSettings();
   for (const s of batch) {
     try {
+      if (hostBlocked(s.host, settings.excludedDomains)) continue;
       let existing = [];
       try {
         existing = (await client.getLoginNamesForURL(s.tabId, s.frameUrl))
@@ -191,7 +193,16 @@ async function flushPendingSaves() {
       } catch {}
       const target = pickSaveTarget({ ...s, existing });
       if (target === null) continue;
-      await client.saveLogin(s.tabId, s.frameUrl, target, s.password);
+      const isUpdate = existing.some((u) => u.toLowerCase() === String(target).toLowerCase());
+      if ((isUpdate && settings.askToUpdate === false) || (!isUpdate && settings.askToSave === false)) continue;
+      await presentSaveOffer({
+        tabId: s.tabId,
+        frameUrl: s.frameUrl,
+        target,
+        password: s.password,
+        host: s.host,
+        update: isUpdate,
+      });
     } catch {}
   }
 }
@@ -367,6 +378,19 @@ async function activeTab() {
   return tab;
 }
 
+function httpUrl(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  const withScheme = /^https?:\/\//i.test(s) ? s : `https://${s}`;
+  try {
+    const u = new URL(withScheme);
+    if (!/^https?:$/i.test(u.protocol)) return null;
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
 function registrableHost(u) {
   try {
     return new URL(u).hostname.toLowerCase();
@@ -403,6 +427,44 @@ const CONTENT_ALLOWED = new Set([
 
 const saveOffers = new Map();
 const cycleByTab = new Map();
+
+// the bar must answer; a closed port used to look like "no bar" and saved immediately
+async function presentSaveOffer({ tabId, frameUrl, target, password, host, update }) {
+  saveOffers.set(tabId, {
+    tabId,
+    frameUrl,
+    target,
+    password,
+    host,
+    update,
+    at: Date.now(),
+  });
+  let offered = false;
+  try {
+    const resp = await chrome.tabs.sendMessage(
+      tabId,
+      { type: "showSaveBar", username: target, update },
+      { frameId: 0 },
+    );
+    offered = !!resp?.ok;
+  } catch {}
+  if (!offered) {
+    // the page is already gone, so Apple's sheet is the only place left to confirm
+    saveOffers.delete(tabId);
+    await client.saveLogin(tabId, frameUrl, target, password);
+    return { ok: true, saved: true };
+  }
+  setTimeout(() => {
+    const offer = saveOffers.get(tabId);
+    if (!offer) return;
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: "showSaveBar", username: offer.target, update: offer.update },
+      { frameId: 0 },
+    ).catch(() => {});
+  }, 1500);
+  return { ok: true, saved: false, offered: true };
+}
 
 chrome.runtime.onConnect.addListener((port) => {
   if (!INLINE_MENU_PORTS.has(port.name)) {
@@ -528,10 +590,21 @@ async function rebuildContextMenu(tab) {
   });
 }
 
+function clearBadges() {
+  chrome.tabs.query({}, (tabs) => {
+    for (const t of tabs || []) {
+      if (t.id != null) chrome.action.setBadgeText({ text: "", tabId: t.id });
+    }
+  });
+}
+
 chrome.commands?.onCommand.addListener(async (command) => {
   if (command === "lock-vault") {
     pwCacheClear();
     client.disconnect();
+    menuLogins = [];
+    clearBadges();
+    rebuildContextMenu(await activeTab());
     return;
   }
   const tab = await activeTab();
@@ -561,7 +634,9 @@ chrome.contextMenus?.onClicked.addListener(async (info, tab) => {
   if (!client.ready || !tab.url) return;
   const host = registrableHost(tab.url);
   let logins = [];
-  try { logins = uniqueByUsername(await client.getLoginNamesForURL(tab.id, tab.url)); } catch { return; }
+  try {
+    logins = uniqueByUsername(orderByMru(host, await client.getLoginNamesForURL(tab.id, tab.url)));
+  } catch { return; }
   const login = logins[0];
   if (!login) return;
   if (info.menuItemId === "pb-user") await copyText(login.username || "");
@@ -586,12 +661,28 @@ chrome.tabs?.onUpdated.addListener((tabId, info, tab) => {
     rebuildContextMenu(tab);
     const offer = saveOffers.get(tabId);
     if (offer && Date.now() - offer.at < 20000) {
-      chrome.tabs.sendMessage(tabId, { type: "showSaveBar", username: offer.target, update: offer.update }).catch(() => {});
+      chrome.tabs.sendMessage(
+        tabId,
+        { type: "showSaveBar", username: offer.target, update: offer.update },
+        { frameId: 0 },
+      ).catch(() => {});
     }
+  }
+});
+chrome.storage?.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  if (changes.enableBadge) {
+    chrome.tabs.query({}, (tabs) => {
+      for (const t of tabs || []) if (t.id != null) updateBadge(t.id);
+    });
+  }
+  if (changes.enableContextMenu || changes.enableBadge) {
+    activeTab().then((tab) => rebuildContextMenu(tab)).catch(() => {});
   }
 });
 try {
   chrome.webRequest?.onCompleted.addListener((details) => {
+    if (details.type !== "main_frame") return;
     if (!saveOffers.has(details.tabId)) return;
     const method = String(details.method || "").toUpperCase();
     if (!["POST", "PUT", "PATCH"].includes(method)) return;
@@ -796,35 +887,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if ((isUpdate && settings.askToUpdate === false) || (!isUpdate && settings.askToSave === false)) {
             return sendResponse({ ok: true, saved: false, skipped: true });
           }
-          saveOffers.set(sender.tab.id, {
+          sendResponse(await presentSaveOffer({
             tabId: sender.tab.id,
             frameUrl,
             target,
             password: msg.password,
             host,
             update: isUpdate,
-            at: Date.now(),
-          });
-          let offered = false;
-          try {
-            await chrome.tabs.sendMessage(
-              sender.tab.id,
-              { type: "showSaveBar", username: target, update: isUpdate },
-              { frameId: sender.frameId },
-            );
-            offered = true;
-          } catch {}
-          if (!offered) {
-            saveOffers.delete(sender.tab.id);
-            await client.saveLogin(sender.tab.id, frameUrl, target, msg.password);
-            return sendResponse({ ok: true, saved: true });
-          }
-          setTimeout(() => {
-            const offer = saveOffers.get(sender.tab.id);
-            if (!offer) return;
-            chrome.tabs.sendMessage(sender.tab.id, { type: "showSaveBar", username: offer.target, update: offer.update }).catch(() => {});
-          }, 1500);
-          sendResponse({ ok: true, saved: false, offered: true });
+          }));
           break;
         }
 
@@ -870,10 +940,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "copyField": {
           const tab = await activeTab();
           if (!tab?.url || tab.id == null) return sendResponse({ ok: false, error: "no tab" });
+          const url = httpUrl(msg.url) || tab.url;
           let text = "";
           if (msg.field === "username") text = msg.username || "";
           else if (msg.field === "password") {
-            const cred = await client.getPasswordForLoginName(tab.id, tab.url, { username: msg.username });
+            const cred = await client.getPasswordForLoginName(tab.id, url, { username: msg.username });
             text = cred?.password || "";
           } else if (msg.field === "otp") {
             text = await resolveOneTimeCode(tab.id, Number(msg.id));
@@ -921,10 +992,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         case "getOneTimeCodes": {
           const tab = await activeTab();
-          if (!tab?.url) return sendResponse({ ok: false, error: "no active tab" });
+          const url = httpUrl(msg.url) || tab?.url;
+          if (!tab?.id || !url) return sendResponse({ ok: false, error: "no active tab" });
           if (!client.ready) return sendResponse({ ok: true, rows: [] });
           if (!client.canFillOneTimeCodes) return sendResponse({ ok: true, supported: false, rows: [] });
-          const { rows, requiresAuth } = await listOneTimeCodes(tab.id, 0, frameUrlsFor({ url: tab.url, tab }));
+          const { rows, requiresAuth } = await listOneTimeCodes(tab.id, 0, frameUrlsFor({ url, tab }));
           sendResponse({ ok: true, supported: true, rows, requiresAuth });
           break;
         }
@@ -955,7 +1027,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         case "openPasswordsApp": {
           const tab = await activeTab();
-          const url = tab?.url && /^https?:/i.test(tab.url) ? tab.url : undefined;
+          const url = httpUrl(msg.url) || (tab?.url && /^https?:/i.test(tab.url) ? tab.url : undefined);
           await ensureConnected();
           if (msg.mode === "totp") {
             if (!msg.uri || !/^(apple-)?otpauth:\/\//i.test(msg.uri)) return sendResponse({ ok: false, error: "no otpauth URI" });
@@ -1036,37 +1108,42 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "fillOnPage": {
           const tab = await activeTab();
           if (!tab?.url) return sendResponse({ ok: false, error: "no active tab" });
-          const host = registrableHost(tab.url);
+          const pageHost = registrableHost(tab.url);
           const isLocalDev =
-            host === "localhost" ||
-            host === "127.0.0.1" ||
-            host === "[::1]" ||
-            host?.endsWith(".localhost") ||
-            host?.endsWith(".test");
+            pageHost === "localhost" ||
+            pageHost === "127.0.0.1" ||
+            pageHost === "[::1]" ||
+            pageHost?.endsWith(".localhost") ||
+            pageHost?.endsWith(".test");
           if (!/^https:\/\//i.test(tab.url) && !isLocalDev) {
             return sendResponse({ ok: false, error: "refusing to fill on a non-HTTPS page" });
           }
-          let cred = pwCacheGet(host, msg.loginName?.username);
+          const credUrl = httpUrl(msg.url) || tab.url;
+          const credHost = registrableHost(credUrl);
+          const sameSite = credHost === pageHost;
+          let cred = sameSite ? pwCacheGet(pageHost, msg.loginName?.username) : null;
           if (!cred) {
-            cred = (await readPasswordForFrame(tab.id, tab.url, msg.loginName?.username)).cred;
-            if (cred) pwCacheSet(host, cred);
+            cred = (await readPasswordForFrame(tab.id, credUrl, msg.loginName?.username)).cred;
+            if (cred && sameSite) pwCacheSet(pageHost, cred);
           }
-          let filled = false;
-          if (cred) {
-            // content script re-checks expectedHost before filling
-            const resp = await chrome.tabs.sendMessage(tab.id, {
-              type: "fill",
-              username: cred.username,
-              password: cred.password,
-              expectedHost: host,
-            });
-            filled = !!resp?.filled;
-            if (filled) {
-              recordMru(host, cred.username);
-              lastFillByTab.set(tab.id, { host, username: cred.username });
-            }
+          if (!cred) {
+            return sendResponse({ ok: false, filled: false, error: "No saved password for that login." });
           }
-          sendResponse({ ok: true, filled });
+          // content script re-checks expectedHost against the page being filled
+          const resp = await chrome.tabs.sendMessage(tab.id, {
+            type: "fill",
+            username: cred.username,
+            password: cred.password,
+            expectedHost: pageHost,
+          });
+          const filled = !!resp?.filled;
+          if (filled && sameSite) {
+            recordMru(pageHost, cred.username);
+            lastFillByTab.set(tab.id, { host: pageHost, username: cred.username });
+          }
+          sendResponse(filled
+            ? { ok: true, filled: true }
+            : { ok: false, filled: false, error: resp?.error || "Couldn't find a login form on this page." });
           break;
         }
 
@@ -1077,11 +1154,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const entry = tab?.id != null ? lastFillByTab.get(tab.id) : null;
           const host = tab?.url ? registrableHost(tab.url) : null;
           if (!entry || !host || entry.host !== host) {
-            return sendResponse({ ok: true, refilled: false });
+            return sendResponse({ ok: true, refilled: false, reason: "none" });
           }
           try {
             const cred = await client.getPasswordForLoginName(tab.id, tab.url, { username: entry.username });
-            if (!cred) return sendResponse({ ok: true, refilled: false });
+            if (!cred) return sendResponse({ ok: false, refilled: false, error: "No saved password for that login." });
             pwCacheSet(host, cred);
             const resp = await chrome.tabs.sendMessage(tab.id, {
               type: "fill",
@@ -1089,9 +1166,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               password: cred.password,
               expectedHost: host,
             });
-            sendResponse({ ok: true, refilled: !!resp?.filled, username: cred.username });
+            if (!resp?.filled) {
+              return sendResponse({ ok: false, refilled: false, error: resp?.error || "Couldn't find a login form on this page." });
+            }
+            sendResponse({ ok: true, refilled: true, username: cred.username });
           } catch (e) {
-            sendResponse({ ok: true, refilled: false, error: String(e?.message ?? e) });
+            sendResponse({ ok: false, refilled: false, error: String(e?.message ?? e) });
           }
           break;
         }

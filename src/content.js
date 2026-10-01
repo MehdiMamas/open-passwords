@@ -330,7 +330,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "showSaveBar": {
       if (window !== window.top) return false;
       showSaveBar(msg);
-      return false;
+      sendResponse({ ok: true });
+      return true;
     }
     case "hideSaveBar": {
       hideSaveBar();
