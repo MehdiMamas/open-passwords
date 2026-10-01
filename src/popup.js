@@ -1,3 +1,40 @@
+let platformOs = "mac";
+let deviceLabel = "your Mac";
+
+function helperInstallHint() {
+  return platformOs === "win" ? "run native/windows/install.ps1" : "run native/install.sh";
+}
+
+function applyPlatformCopy() {
+  const nohelper = document.getElementById("nohelper-msg");
+  const store = document.getElementById("nohelper-link");
+  const pinMsg = document.getElementById("pin-msg");
+  if (platformOs === "win") {
+    nohelper.textContent =
+      "Couldn't reach Apple's password helper. Install iCloud for Windows, turn on Passwords, then " +
+      helperInstallHint() +
+      " and fully quit the browser.";
+    store.hidden = false;
+    pinMsg.textContent =
+      "A verification code was sent by iCloud for Windows. Enter it to grant access. If this popup closes when the code appears, click the toolbar icon again.";
+  } else {
+    nohelper.textContent =
+      "Couldn't reach Apple's password helper. This needs macOS 14+ with the Passwords app, and the extension must run with Apple's accepted ID.";
+    store.hidden = true;
+    pinMsg.textContent = "A verification code was generated on your Mac. Enter it to grant access.";
+  }
+}
+
+document.getElementById("icloud-store").addEventListener("click", (e) => {
+  e.preventDefault();
+  const storeUrl = "ms-windows-store://pdp/?productid=9PKTQ5699M62";
+  chrome.tabs.create({ url: storeUrl }, () => {
+    if (chrome.runtime.lastError) {
+      chrome.tabs.create({ url: "https://apps.microsoft.com/detail/9pktq5699m62" });
+    }
+  });
+});
+
 const views = {
   nohelper: document.getElementById("view-nohelper"),
   pin: document.getElementById("view-pin"),
@@ -76,7 +113,7 @@ async function renderPolicyToggle() {
   const r = await policyMsg("get");
   if (r.error || !r.ok) {
     policyToggle.disabled = true;
-    policyNote.textContent = "needs the policy helper - run native/install.sh";
+    policyNote.textContent = `needs the policy helper - ${helperInstallHint()}`;
     return;
   }
   policyToggle.disabled = false;
@@ -90,13 +127,14 @@ policyToggle.addEventListener("change", async () => {
   const r = await policyMsg(on ? "set" : "clear");
   policyToggle.disabled = false;
   if (r.error || !r.ok) {
-    policyNote.textContent = "helper failed - run native/install.sh";
+    policyNote.textContent = r?.error || `helper failed - ${helperInstallHint()}`;
     policyToggle.checked = !on;
     return;
   }
   // the profile only sticks once approved, reflect the real forced state
   policyToggle.checked = !!r.hidden;
-  if (on && !r.hidden) policyNote.textContent = "approve the profile in System Settings, then reopen this popup";
+  if (r.note) policyNote.textContent = r.note;
+  else if (on && !r.hidden) policyNote.textContent = "approve the profile in System Settings, then reopen this popup";
   else if (!on && r.hidden) policyNote.textContent = "remove the profile in System Settings, then reopen this popup";
   else policyNote.textContent = "";
 });
@@ -163,9 +201,9 @@ autoPairToggle.addEventListener("change", async () => {
   autoPairNote.textContent = "checking…";
   const r = await send({ type: "autoPairCheck" });
   if (r?.ok) {
-    autoPairNote.textContent = "on - the next code your Mac shows gets entered for you";
+    autoPairNote.textContent = `on - the next code ${deviceLabel} shows gets entered for you`;
   } else if (/not found|forbidden|host/i.test(r?.error || "")) {
-    autoPairNote.textContent = "needs the reader helper - run native/install.sh, then restart the browser";
+    autoPairNote.textContent = `needs the reader helper - ${helperInstallHint()}, then restart the browser`;
   } else {
     autoPairNote.textContent = r?.error || "the reader could not reach System Events";
   }
@@ -346,7 +384,7 @@ document.getElementById("verify").addEventListener("click", async () => {
   else {
     // a failed attempt spends the code, so the background put a fresh one on the Mac
     const base = res?.error ?? "Verification failed.";
-    pinError.textContent = res?.newCode ? `${base} - enter the new code on your Mac` : base;
+    pinError.textContent = res?.newCode ? `${base} - enter the new code on ${deviceLabel}` : base;
     pinError.hidden = false;
     pinInput.value = "";
     pinInput.focus();
@@ -413,6 +451,10 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 (async () => {
+  const plat = await send({ type: "getPlatform" });
+  if (plat?.os) platformOs = plat.os;
+  if (plat?.label) deviceLabel = plat.label;
+  applyPlatformCopy();
   const res = await send({ type: "getState" });
   caps = res?.caps || {};
   renderAutoPairError(res?.autoPairError);

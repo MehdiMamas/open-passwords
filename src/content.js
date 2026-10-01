@@ -472,11 +472,20 @@ function buildSuggestionBox(field) {
   return box;
 }
 
+async function deviceLabel() {
+  try {
+    const r = await chrome.runtime.sendMessage({ type: "getPlatform" });
+    if (r?.label) return r.label;
+  } catch (_) {}
+  return "your Mac";
+}
+
 async function buildLockedSuggestion(field, onUnlock) {
+  const place = await deviceLabel();
   const box = buildSuggestionBox(field);
 
   const msg = document.createElement("div");
-  msg.textContent = "Enter the code shown on your Mac";
+  msg.textContent = `Enter the code shown on ${place}`;
   Object.assign(msg.style, { padding: "8px 10px 4px", fontSize: "12px", opacity: "0.7" });
   box.appendChild(msg);
 
@@ -523,10 +532,10 @@ async function buildLockedSuggestion(field, onUnlock) {
   });
   again.addEventListener("mousedown", (e) => e.stopPropagation());
   again.addEventListener("click", async () => {
-    setStatus("Asking your Mac for a new code...", false);
+    setStatus(`Asking ${place} for a new code...`, false);
     input.value = "";
     await chrome.runtime.sendMessage({ type: "requestChallenge" }).catch(() => {});
-    setStatus("Enter the new code on your Mac", false);
+    setStatus(`Enter the new code on ${place}`, false);
     input.focus();
   });
   box.appendChild(again);
@@ -578,7 +587,7 @@ async function buildLockedSuggestion(field, onUnlock) {
     } else {
       // the attempt burned that challenge, so the background already put a new code on the Mac
       const base = res?.error || "Verification failed";
-      setStatus(res?.newCode ? `${base} - enter the new code on your Mac` : base, true);
+      setStatus(res?.newCode ? `${base} - enter the new code on ${place}` : base, true);
       input.value = "";
       input.focus();
     }

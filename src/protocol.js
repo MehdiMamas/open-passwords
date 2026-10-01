@@ -15,6 +15,23 @@ import {
 const NATIVE_HOST = "com.apple.passwordmanager";
 const BROWSER_NAME = "Chrome";
 const VERSION = "1.0";
+// background.js sets this from chrome.runtime.getPlatformInfo; tests leave the mac default
+let deviceLabel = "your Mac";
+
+export function setDeviceLabel(label) {
+  if (typeof label === "string" && label) deviceLabel = label;
+}
+
+function freshCodeMessage() {
+  return `Enter the new code ${deviceLabel} is showing now`;
+}
+
+// iCloud for Windows JSON-encodes some integers as strings
+function asInt(v) {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+  return v;
+}
 // past this we re-prompt instead of verifying against a code the user lost track of
 const CHALLENGE_TTL_MS = 3 * 60_000;
 
@@ -274,7 +291,7 @@ export class ApplePasswords {
     if (pake.TID !== this.session.username) throw new Error("challenge for another session");
     if (pake.ErrCode !== undefined) throw new Error(`server hello error ${pake.ErrCode}`);
     if (pake.MSG.toString() !== MSGType.ServerKeyExchange.toString()) throw new Error("unexpected server message");
-    if (pake.PROTO !== SecretSessionVersion.SRPWithRFCVerification) throw new Error("unsupported protocol");
+    if (asInt(pake.PROTO) !== SecretSessionVersion.SRPWithRFCVerification) throw new Error("unsupported protocol");
 
     const B = bytesToBigInt(this.session.deserialize(pake.B));
     const s = this.session.deserialize(pake.s);
@@ -289,12 +306,12 @@ export class ApplePasswords {
     if (!this.session) throw new Error("not connected");
     if (!this.hasChallenge) {
       await this.requestChallenge();
-      throw challengeError("Enter the new code your Mac is showing now");
+      throw challengeError(freshCodeMessage());
     }
     const gen = this._challengeGen;
     return this._withLock(async () => {
       // re-issued while queued, typed code is for the old prompt
-      if (gen !== this._challengeGen) throw challengeError("Enter the new code your Mac is showing now");
+      if (gen !== this._challengeGen) throw challengeError(freshCodeMessage());
       try {
         await this.session.setSharedKey(pin);
         const m = await this.session.computeM();
@@ -313,8 +330,9 @@ export class ApplePasswords {
         const pake = JSON.parse(bytesToUtf8(base64ToBytes(reply.payload.PAKE)));
         if (pake.TID !== this.session.username) throw new Error("verification for another session");
         if (pake.MSG.toString() !== MSGType.ServerVerification.toString()) throw new Error("unexpected server message");
-        if (pake.ErrCode === 1) throw new Error("Incorrect code");
-        if (pake.ErrCode !== 0 && pake.ErrCode !== undefined) throw new Error(`verification error ${pake.ErrCode}`);
+        const errCode = asInt(pake.ErrCode);
+        if (errCode === 1) throw new Error("Incorrect code");
+        if (errCode !== 0 && errCode !== undefined) throw new Error(`verification error ${pake.ErrCode}`);
 
         const hamk = await this.session.computeHMAC(m);
         if (!constantTimeEqual(this.session.deserialize(pake.HAMK), hamk))

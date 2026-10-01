@@ -1,8 +1,21 @@
 // alarm keep-alive holds the MV3 worker so the PIN isnt re-prompted every idle-out
 
-import { ApplePasswords, State } from "./protocol.js";
+import { ApplePasswords, State, setDeviceLabel } from "./protocol.js";
+import { labelForOs } from "./os-label.js";
 
 const client = new ApplePasswords();
+let platformOs = "mac";
+const platformReady = new Promise((resolve) => {
+  try {
+    chrome.runtime.getPlatformInfo((info) => {
+      platformOs = info?.os || "mac";
+      setDeviceLabel(labelForOs(platformOs));
+      resolve(platformOs);
+    });
+  } catch (_) {
+    resolve(platformOs);
+  }
+});
 
 client.onStateChange((s) => {
   if (s !== State.Unlocked) {
@@ -313,6 +326,7 @@ const CONTENT_ALLOWED = new Set([
   "requestChallenge",
   "verifyPin",
   "resolveSave",
+  "getPlatform",
 ]);
 
 chrome.commands?.onCommand.addListener(async (command) => {
@@ -485,11 +499,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           break;
         }
 
+        case "getPlatform":
+          await platformReady;
+          sendResponse({ ok: true, os: platformOs, label: labelForOs(platformOs) });
+          break;
+
         case "getState":
+          await platformReady;
           await ensureConnected();
           sendResponse({
             ok: true,
             state: client.state,
+            os: platformOs,
+            label: labelForOs(platformOs),
             hasChallenge: client.hasChallenge,
             caps: {
               oneTimeCodes: client.canFillOneTimeCodes,
@@ -560,18 +582,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ ok: true, state: client.state });
           break;
 
-        case "requestChallenge":
+        case "requestChallenge": {
           // top frame or popup only, so a hostile sub-frame cant spam native prompts
           if (fromContent && sender.frameId !== 0) return sendResponse({ ok: false, error: "forbidden" });
+          await platformReady;
           await ensureConnected();
-          await withTimeout(client.requestChallenge({ ifNeeded: !!msg.ifNeeded }), 8000, "challenge timed out");
+          const issued = await withTimeout(
+            client.requestChallenge({ ifNeeded: !!msg.ifNeeded }),
+            8000,
+            "challenge timed out",
+          );
+          // the Windows toast steals focus and closes this popup; reopen it once the code is up
+          if (platformOs === "win" && fromUi && issued !== false) {
+            setTimeout(() => {
+              try {
+                chrome.action.openPopup(() => void chrome.runtime.lastError);
+              } catch (_) {}
+            }, 700);
+          }
           // not awaited, the UI shows its PIN box while auto-pair reads the code
           tryAutoPair("request");
           sendResponse({ ok: true, state: client.state, hasChallenge: client.hasChallenge });
           break;
+        }
 
         case "verifyPin": {
           if (fromContent && sender.frameId !== 0) return sendResponse({ ok: false, error: "forbidden" });
+          await platformReady;
           await ensureConnected();
           try {
             await withTimeout(client.verifyPin(msg.pin), 8000, "verification timed out");

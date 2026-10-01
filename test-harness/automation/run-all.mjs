@@ -9,6 +9,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 const DRIVERS = [
   ["PIN handshake (SRP math + challenge lifecycle)", "pin-session.test.mjs"],
+  ["Windows helper quirks (string MSG, string SMSG)", "windows-host.test.mjs"],
   ["UI suite (login/OTP/forum, offer flow)", "drive.mjs"],
   ["Adversarial (false positives: search/tag/checkout)", "drive-adversarial.mjs"],
   ["Test bench (positive + negative on one page)", "drive-bench.mjs"],

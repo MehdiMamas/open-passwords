@@ -17,15 +17,18 @@
     <main>
       <!-- No native helper -->
       <section id="view-nohelper" hidden>
-        <p class="msg">
+        <p class="msg" id="nohelper-msg">
           Couldn't reach Apple's password helper. This needs macOS 14+ with the
           Passwords app, and the extension must run with Apple's accepted ID.
+        </p>
+        <p class="msg" id="nohelper-link" hidden>
+          <a id="icloud-store" href="https://apps.microsoft.com/detail/9pktq5699m62">Get iCloud for Windows</a>
         </p>
       </section>
 
       <!-- Needs PIN -->
       <section id="view-pin" hidden>
-        <p class="msg">
+        <p class="msg" id="pin-msg">
           A verification code was generated on your Mac. Enter it to grant access.
         </p>
         <input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" />
