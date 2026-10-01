@@ -1,5 +1,5 @@
 // Port names match Bitwarden autofill-overlay.enum.ts at the pinned commit.
-// See vendor/bitwarden and BITWARDEN.md. Messages without the per-tab key are dropped.
+// See vendor/bitwarden and UPSTREAMS.md. Messages without the per-tab key are dropped.
 
 export const INLINE_MENU_PORTS = new Set([
   "autofill-inline-menu-button-port",

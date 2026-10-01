@@ -104,7 +104,7 @@ npm run build
 
 Then on `chrome://extensions`, click Reload on PassBridge. You do not load the extension again unless you moved the folder.
 
-To take a newer Bitwarden autofill snapshot, see [BITWARDEN.md](BITWARDEN.md).
+To take a newer Bitwarden autofill snapshot, see [UPSTREAMS.md](UPSTREAMS.md).
 
 ## When something fails
 

@@ -446,6 +446,10 @@ let anchorField = null;
 let cachedLogins = null;
 let navItems = [];
 let navIndex = -1;
+let loginSearchEl = null;
+let loginListReflow = null;
+let loginListUnbind = null;
+let menuGen = 0;
 
 function isLoginField(el) {
   if (!isVisible(el)) return false;
@@ -476,6 +480,11 @@ function isLoginField(el) {
 }
 
 function removeSuggestion() {
+  menuGen++;
+  loginListUnbind?.();
+  loginListUnbind = null;
+  loginListReflow = null;
+  loginSearchEl = null;
   if (suggestionHost) {
     try { suggestionHost._pbWatch?.disconnect(); } catch {}
     try { suggestionHost.hidePopover?.(); } catch {}
@@ -511,9 +520,12 @@ function setActiveNav(i) {
 
 function registerRow(row, onActivate) {
   row.setAttribute("role", "option");
-  const idx = navItems.length;
   navItems.push({ el: row, onActivate });
-  row.addEventListener("mouseenter", () => setActiveNav(idx));
+  // index is resolved at hover time so a rebuilt login list can keep the generator rows
+  row.addEventListener("mouseenter", () => {
+    const idx = navItems.findIndex((it) => it.el === row);
+    if (idx >= 0) setActiveNav(idx);
+  });
   // act on click not mousedown so the click cant land on a link behind the box (x.com forgot password, issue #2)
   row.addEventListener("mousedown", (e) => {
     if (!e.isTrusted) return;
@@ -551,12 +563,24 @@ document.addEventListener(
   true,
 );
 
+function menuSearchFocused(e) {
+  if (!loginSearchEl) return false;
+  if (e.target === loginSearchEl) return true;
+  // a closed shadow retargets the key event to the host
+  return e.target === suggestionHost && document.activeElement === suggestionHost;
+}
+
+function menuHandlesKeys(e) {
+  return e.target === anchorField || menuSearchFocused(e);
+}
+
 function onSuggestionKeydown(e) {
   if (!e.isTrusted) return;
   if (!suggestionEl) return;
   if (e.key === "Escape") {
+    const field = anchorField;
     removeSuggestion();
-    anchorField?.focus();
+    field?.focus();
     e.preventDefault();
     e.stopPropagation();
     return;
@@ -565,17 +589,22 @@ function onSuggestionKeydown(e) {
     removeSuggestion();
     return;
   }
-  if (!navItems.length || e.target !== anchorField) return;
+  if (!navItems.length || !menuHandlesKeys(e)) return;
   if (e.key === "ArrowDown") {
     setActiveNav((navIndex + 1) % navItems.length);
     e.preventDefault();
+    e.stopPropagation();
   } else if (e.key === "ArrowUp") {
     setActiveNav((navIndex - 1 + navItems.length) % navItems.length);
     e.preventDefault();
+    e.stopPropagation();
   } else if (e.key === "Enter" && navIndex >= 0) {
     e.preventDefault();
     e.stopPropagation();
     navItems[navIndex].onActivate();
+  } else if (e.key === "Enter" && menuSearchFocused(e)) {
+    e.preventDefault();
+    e.stopPropagation();
   }
 }
 
@@ -646,6 +675,7 @@ function positionBox() {
   host.style.width = `${width}px`;
   host.style.maxWidth = "320px";
   host.style.minWidth = "0";
+  loginListReflow?.();
   const h = (suggestionEl || host).offsetHeight || 0;
   const belowTop = r.bottom + GAP;
   const aboveTop = r.top - GAP - h;
@@ -992,6 +1022,41 @@ function fillGeneratedPassword(field, pw) {
   lastGenerated = { host: location.hostname, password: pw, at: Date.now() };
 }
 
+// More than six saved logins scrolls inside the menu. Search is a case-insensitive
+// username substring. One saved login still fills without this list. A filter that
+// leaves one row does not fill until Enter or a click. Zero matches shows an empty
+// list and types nothing.
+const LOGIN_LIST_CAP = 6;
+const LOGIN_ROW_PX = 40;
+
+function pageUsernameQuery(field) {
+  if (!field || isPasswordField(field)) return "";
+  return (field.value || "").trim().toLowerCase();
+}
+
+function usernameMatches(login, query) {
+  if (!query) return true;
+  return (login.username || "").toLowerCase().includes(query);
+}
+
+function fitLoginScroller(scroller) {
+  if (!anchorField || !suggestionEl) return;
+  const r = anchorField.getBoundingClientRect();
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  const GAP = 6;
+  const chrome = Math.max(0, suggestionEl.offsetHeight - scroller.offsetHeight);
+  const below = vh - 8 - (r.bottom + GAP) - chrome;
+  const above = r.top - GAP - 8 - chrome;
+  const room = Math.max(below, above);
+  const row = scroller.firstElementChild?.offsetHeight || LOGIN_ROW_PX;
+  const cap = (row > 0 ? row : LOGIN_ROW_PX) * LOGIN_LIST_CAP;
+  const max = Math.min(cap, Math.max(row > 0 ? row : LOGIN_ROW_PX, room));
+  scroller.style.maxHeight = `${Math.round(max)}px`;
+  scroller.style.overflowX = "hidden";
+  scroller.style.overflowY = "auto";
+  scroller.style.overscrollBehavior = "contain";
+}
+
 // fill routes through the origin-checked background path, page never sees the password
 function appendLoginRows(box, field, logins) {
   for (const login of logins) {
@@ -1051,6 +1116,94 @@ function appendLoginRows(box, field, logins) {
     });
     box.appendChild(row);
   }
+}
+
+function mountLoginList(box, field, logins, hasGenerator) {
+  const capped = logins.length > LOGIN_LIST_CAP;
+  let query = pageUsernameQuery(field);
+  let search = null;
+
+  if (capped) {
+    search = document.createElement("input");
+    search.type = "text";
+    search.placeholder = "Search usernames";
+    search.setAttribute("aria-label", "Search usernames");
+    search.autocomplete = "off";
+    search.spellcheck = false;
+    search.autocapitalize = "off";
+    search.value = isPasswordField(field) ? "" : field.value || "";
+    Object.assign(search.style, {
+      display: "block",
+      margin: "8px 10px",
+      width: "calc(100% - 20px)",
+      boxSizing: "border-box",
+      padding: "7px 10px",
+      font: `13px ${UI_FONT}`,
+      border: "1px solid rgba(128,128,128,0.35)",
+      borderRadius: "10px",
+      background: "Canvas",
+      color: "CanvasText",
+    });
+    search.style.setProperty("background", "light-dark(rgba(255,255,255,0.55), rgba(0,0,0,0.28))");
+    search.addEventListener("mousedown", (e) => e.stopPropagation());
+    search.addEventListener("input", () => {
+      query = search.value.trim().toLowerCase();
+      render();
+    });
+    box.appendChild(search);
+    loginSearchEl = search;
+  }
+
+  const scroller = document.createElement("div");
+  scroller.setAttribute("data-passbridge-login-list", "1");
+  box.removeAttribute("role");
+  box.removeAttribute("aria-label");
+  scroller.setAttribute("role", "listbox");
+  scroller.setAttribute("aria-label", "Saved logins");
+  box.appendChild(scroller);
+
+  const genHost = document.createElement("div");
+  let pinnedNav = [];
+  if (hasGenerator) {
+    box.appendChild(genHost);
+    const saved = navItems;
+    navItems = [];
+    appendGeneratorOptions(genHost, field, true);
+    pinnedNav = navItems.slice();
+    navItems = saved;
+  }
+
+  const render = () => {
+    navItems = [];
+    navIndex = -1;
+    scroller.replaceChildren();
+    const matched = logins.filter((login) => usernameMatches(login, query));
+    if (!matched.length) {
+      const empty = document.createElement("div");
+      empty.textContent = "No matching usernames";
+      Object.assign(empty.style, { padding: "10px 12px", opacity: "0.65" });
+      scroller.appendChild(empty);
+    } else {
+      appendLoginRows(scroller, field, matched);
+    }
+    for (const item of pinnedNav) navItems.push(item);
+    positionBox();
+  };
+
+  if (!isPasswordField(field)) {
+    const onInput = () => {
+      if (!suggestionEl || anchorField !== field) return;
+      const raw = field.value || "";
+      query = raw.trim().toLowerCase();
+      if (search && search.value !== raw) search.value = raw;
+      render();
+    };
+    field.addEventListener("input", onInput);
+    loginListUnbind = () => field.removeEventListener("input", onInput);
+  }
+
+  if (capped) loginListReflow = () => fitLoginScroller(scroller);
+  render();
 }
 
 function appendGeneratorOptions(box, field, separatorAbove) {
@@ -1124,9 +1277,11 @@ async function buildOfferSuggestion(field) {
     return;
   }
 
-  if (logins.length) appendLoginRows(box, field, logins);
-  if (hasGenerator) appendGeneratorOptions(box, field, logins.length > 0);
-  positionBox(); // final height known now
+  if (logins.length) mountLoginList(box, field, logins, hasGenerator);
+  else if (hasGenerator) {
+    appendGeneratorOptions(box, field, false);
+    positionBox();
+  }
 }
 
 // codes are always an offer behind a click, never filled because a field appeared, a code is a bearer credential
@@ -1324,7 +1479,7 @@ function buildChooser(field, logins) {
     return;
   }
   const box = buildSuggestionBox(field);
-  appendLoginRows(box, field, logins);
+  mountLoginList(box, field, logins, false);
 }
 
 // excludes generic app hosting (firebaseapp, vercel) where anyone can deploy
@@ -1370,8 +1525,10 @@ function frameIsSafe() {
 
 async function onFocusIn(e) {
   if (hostInList(location.hostname, pbSettings.blockedDomains)) return;
+  const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+  if (suggestionHost && (e.target === suggestionHost || path.includes(suggestionHost))) return;
   // focusin from inside a shadow root retargets to the host, composedPath has the real input
-  const field = (e.composedPath ? e.composedPath()[0] : null) || e.target;
+  const field = path[0] || e.target;
   if (field instanceof HTMLInputElement && field.type === "password") everPassword.add(field);
   if (field instanceof HTMLInputElement && isOtpField(field) && isVisible(field)) {
     if (!frameIsSafe() || pbSettings.inlineMenuVisibility === "off") return;
@@ -1413,10 +1570,31 @@ window.addEventListener("resize", positionBox, true);
 document.addEventListener(
   "focusout",
   (e) => {
-    if (!suggestionEl || e.target !== anchorField) return;
+    if (!suggestionEl) return;
+    if (e.target !== anchorField && e.target !== suggestionHost) return;
     const next = e.relatedTarget;
-    if (next && (next === suggestionHost || next === iconHost || suggestionHost?.contains(next) || suggestionEl.contains(next))) return;
-    removeSuggestion();
+    if (
+      next &&
+      (next === suggestionHost ||
+        next === iconHost ||
+        next === anchorField ||
+        next === loginSearchEl ||
+        suggestionHost?.contains(next) ||
+        suggestionEl.contains(next))
+    ) {
+      return;
+    }
+    // closed shadow often reports the next focus as null or the host
+    if (document.activeElement === suggestionHost) return;
+    const gen = menuGen;
+    const field = anchorField;
+    setTimeout(() => {
+      if (gen !== menuGen || !suggestionEl) return;
+      const active = document.activeElement;
+      if (active === field || active === suggestionHost || active === iconHost) return;
+      if (suggestionHost?.contains(active) || suggestionEl?.contains(active)) return;
+      removeSuggestion();
+    }, 0);
   },
   true,
 );

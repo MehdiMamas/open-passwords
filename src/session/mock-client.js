@@ -9,6 +9,20 @@ const FIXTURES = {
   locked: [],
   pinflow: [{ username: "test@example.com", sites: [] }],
   otp: [{ username: "test@example.com", sites: [] }],
+  many: [
+    { username: "alice@example.com", sites: ["https://account.riotgames.com"] },
+    { username: "bob@work.com", sites: [] },
+    { username: "mehdi.one@example.com", sites: [] },
+    { username: "mehdi.two@example.com", sites: [] },
+    { username: "carol@example.com", sites: [] },
+    { username: "dave@example.com", sites: [] },
+    { username: "erin@example.com", sites: [] },
+    { username: "frank@example.com", sites: [] },
+    { username: "gina@example.com", sites: [] },
+    { username: "hank@example.com", sites: [] },
+    { username: "iris@example.com", sites: [] },
+    { username: "jake@example.com", sites: [] },
+  ],
 };
 
 const OTP_ROWS = [

@@ -13,7 +13,7 @@ function mockKindModule(kind) {
   return `export const MOCK_KIND = ${JSON.stringify(kind)};\n`;
 }
 
-const KINDS = ["unlocked", "multi", "locked", "pinflow", "otp"];
+const KINDS = ["unlocked", "multi", "locked", "pinflow", "otp", "many"];
 
 await rm(OUT, { recursive: true, force: true });
 for (const kind of KINDS) {

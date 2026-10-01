@@ -13,6 +13,7 @@ try {
 }
 await mkdir("dist", { recursive: true });
 
+// fonts/ includes OFL.txt, which has to ship beside the woff2 files.
 for (const item of ["manifest.json", "src", "icons", "overlay", "fonts"]) {
   await cp(item, `dist/${item}`, { recursive: true });
 }

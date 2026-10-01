@@ -11,7 +11,7 @@
 
 PassBridge is a fork of [Open Passwords](https://github.com/ManiForoughi2/open-passwords). It speaks Apple's native-messaging protocol (`com.apple.passwordmanager`) so the live vault stays in iCloud, and it takes field detection lists from [Bitwarden's browser extension](https://github.com/bitwarden/clients). How to pull a newer Bitwarden, au2001, or open-passwords commit is in [UPSTREAMS.md](UPSTREAMS.md).
 
-Start here: **[SETUP.md](SETUP.md)** for macOS and Windows.
+Start here: **[SETUP.md](SETUP.md)** for macOS and Windows. The built extension is attached to each [release](https://github.com/MehdiMamas/open-passwords/releases). Unzip it and load that folder unpacked.
 
 ## What you get
 
@@ -33,6 +33,7 @@ Start here: **[SETUP.md](SETUP.md)** for macOS and Windows.
 - [ManiForoughi2/open-passwords](https://github.com/ManiForoughi2/open-passwords) (Apache-2.0), the client this fork starts from.
 - [au2001/icloud-passwords-firefox](https://github.com/au2001/icloud-passwords-firefox) (Apache-2.0), the protocol implementation in `src/apple/`.
 - [bitwarden/clients](https://github.com/bitwarden/clients) (GPL-3.0), the autofill field lists. Snapshot under `vendor/bitwarden/`. Nothing from `bitwarden_license/` is included.
+- [Open Runde](https://github.com/lauridskern/open-runde) (SIL OFL 1.1), the interface font. The license text is in `fonts/OFL.txt`.
 
 See [NOTICE](NOTICE). License: GPL-3.0, see [LICENSE](LICENSE).
 

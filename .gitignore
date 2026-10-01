@@ -9,3 +9,5 @@ vendor/*/.sync-tmp/
 # python bytecode
 __pycache__/
 *.pyc
+
+test-harness/automation/.builds/
