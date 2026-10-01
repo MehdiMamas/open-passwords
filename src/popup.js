@@ -58,9 +58,18 @@ let showFavicons = true;
 
 function setDot(state) {
   dot.className = "dot";
-  if (state === "unlocked") dot.classList.add("ok");
-  else if (state === "needs_pin") dot.classList.add("warn");
-  else if (state === "no_helper") dot.classList.add("err");
+  if (state === "unlocked") {
+    dot.classList.add("ok");
+    dot.title = "Unlocked";
+  } else if (state === "needs_pin") {
+    dot.classList.add("warn");
+    dot.title = "Needs the verification code";
+  } else if (state === "no_helper") {
+    dot.classList.add("err");
+    dot.title = "Password helper unavailable";
+  } else {
+    dot.title = "Connecting";
+  }
 }
 
 function send(msg) {
@@ -117,6 +126,9 @@ async function renderLogins() {
   const host = tab?.url ? new URL(tab.url).hostname : "";
   for (const login of res.logins) {
     const li = document.createElement("li");
+    li.className = "account";
+    const who = document.createElement("div");
+    who.className = "who";
     if (showFavicons && host) {
       const icon = document.createElement("img");
       icon.className = "favicon";
@@ -124,28 +136,46 @@ async function renderLogins() {
       icon.width = 16;
       icon.height = 16;
       icon.src = `https://icons.duckduckgo.com/ip3/${host}.ico`;
-      li.appendChild(icon);
+      who.appendChild(icon);
     }
     const u = document.createElement("span");
     u.className = "u";
     u.textContent = login.username || "(no username)";
-    const copyUser = document.createElement("button");
-    copyUser.textContent = "User";
-    copyUser.title = "Copy username";
-    copyUser.addEventListener("click", () => send({ type: "copyField", field: "username", username: login.username }));
-    const copyPass = document.createElement("button");
-    copyPass.textContent = "Pass";
-    copyPass.title = "Copy password";
-    copyPass.addEventListener("click", () => send({ type: "copyField", field: "password", username: login.username }));
+    u.title = login.username || "";
+    who.appendChild(u);
     const fill = document.createElement("button");
+    fill.className = "fill";
+    fill.type = "button";
     fill.textContent = "Fill";
+    const err = document.createElement("p");
+    err.className = "error fill-error";
+    err.hidden = true;
     fill.addEventListener("click", async () => {
       fill.disabled = true;
+      err.hidden = true;
       const r = await send({ type: "fillOnPage", tabId: tab.id, url: tab.url, loginName: login });
-      if (r?.ok && r.filled) window.close();
-      else fill.disabled = false;
+      if (r?.ok && r.filled) {
+        window.close();
+        return;
+      }
+      fill.disabled = false;
+      err.textContent = r?.error || "Couldn't find a login form on this page.";
+      err.hidden = false;
     });
-    li.append(u, copyUser, copyPass, fill);
+    const copies = document.createElement("div");
+    copies.className = "copies";
+    const copyUser = document.createElement("button");
+    copyUser.className = "copy";
+    copyUser.type = "button";
+    copyUser.textContent = "Copy username";
+    copyUser.addEventListener("click", () => send({ type: "copyField", field: "username", username: login.username }));
+    const copyPass = document.createElement("button");
+    copyPass.className = "copy";
+    copyPass.type = "button";
+    copyPass.textContent = "Copy password";
+    copyPass.addEventListener("click", () => send({ type: "copyField", field: "password", username: login.username }));
+    copies.append(copyUser, copyPass);
+    li.append(who, fill, err, copies);
     list.appendChild(li);
   }
 }

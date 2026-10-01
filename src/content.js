@@ -493,11 +493,19 @@ function registerRow(row, onActivate) {
 
 // a click that follows a row press but reaches the page (box torn down in between) must not act on the page
 let rowPressAt = 0;
+function eventHitsMenu(e) {
+  const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+  if (suggestionHost && path.includes(suggestionHost)) return true;
+  if (iconHost && path.includes(iconHost)) return true;
+  if (suggestionEl && (e.target === suggestionEl || suggestionEl.contains(e.target))) return true;
+  return false;
+}
+
 document.addEventListener(
   "click",
   (e) => {
     if (!rowPressAt || Date.now() - rowPressAt > 700) return;
-    if (suggestionEl && suggestionEl.contains(e.target)) return;
+    if (eventHitsMenu(e)) return;
     rowPressAt = 0;
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -564,6 +572,20 @@ function pageIsFaded() {
   }
 }
 
+function rectsOverlap(a, b) {
+  return a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+}
+
+function overlapsControl(rect) {
+  const nodes = document.querySelectorAll("input, textarea");
+  for (const el of nodes) {
+    if (el === anchorField) continue;
+    if (!isVisible(el)) continue;
+    if (rectsOverlap(rect, el.getBoundingClientRect())) return true;
+  }
+  return false;
+}
+
 function positionBox() {
   const host = suggestionHost || suggestionEl;
   if (!host || !anchorField) return;
@@ -576,17 +598,25 @@ function positionBox() {
     return;
   }
   const r = anchorField.getBoundingClientRect();
-  const shift = window === window.top ? { x: 0, y: 0 } : { x: 0, y: 0 };
   void frameShift();
-  host.style.left = `${r.left + shift.x}px`;
-  host.style.minWidth = `${Math.max(r.width, 200)}px`;
-  const h = (suggestionEl || host).offsetHeight || 0;
+  const GAP = 6;
+  const vw = window.innerWidth || document.documentElement.clientWidth;
   const vh = window.innerHeight || document.documentElement.clientHeight;
-  if (r.bottom + 2 + h > vh && r.top - 2 - h > 0) {
-    host.style.top = `${r.top - h - 2}px`;
-  } else {
-    host.style.top = `${r.bottom + 2}px`;
-  }
+  const width = Math.min(320, Math.max(Math.min(r.width, 320), 200));
+  let left = r.left;
+  if (left + width > vw - 8) left = Math.max(8, vw - width - 8);
+  host.style.width = `${width}px`;
+  host.style.maxWidth = "320px";
+  host.style.minWidth = "0";
+  const h = (suggestionEl || host).offsetHeight || 0;
+  const belowTop = r.bottom + GAP;
+  const aboveTop = r.top - GAP - h;
+  const belowRect = { left, top: belowTop, right: left + width, bottom: belowTop + h };
+  const aboveRect = { left, top: aboveTop, right: left + width, bottom: aboveTop + h };
+  const belowBad = belowRect.bottom > vh - 8 || overlapsControl(belowRect);
+  const aboveOk = aboveTop >= 8 && !overlapsControl(aboveRect);
+  host.style.left = `${left}px`;
+  host.style.top = `${belowBad && aboveOk ? aboveTop : belowTop}px`;
   const mr = host.getBoundingClientRect();
   if (mr.width > 8 && mr.height > 8) {
     const top = document.elementFromPoint(mr.left + mr.width / 2, mr.top + Math.min(12, mr.height / 2));
@@ -600,25 +630,17 @@ function positionBox() {
 
 const UI_FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Open Runde", system-ui, sans-serif';
 
-let fontFaceInjected = false;
-function ensureFontFace() {
-  if (fontFaceInjected) return;
-  fontFaceInjected = true;
-  try {
-    const css = [
-      ["Regular", 400],
-      ["Medium", 500],
-      ["Semibold", 600],
-    ]
-      .map(
-        ([w, n]) =>
-          `@font-face{font-family:"Open Runde";font-weight:${n};font-display:swap;src:url("${chrome.runtime.getURL(`fonts/OpenRunde-${w}.woff2`)}") format("woff2");}`,
-      )
-      .join("");
-    const st = document.createElement("style");
-    st.textContent = css;
-    (document.head || document.documentElement).appendChild(st);
-  } catch {}
+function fontFaceCss() {
+  return [
+    ["Regular", 400],
+    ["Medium", 500],
+    ["Semibold", 600],
+  ]
+    .map(
+      ([w, n]) =>
+        `@font-face{font-family:"Open Runde";font-weight:${n};font-display:swap;src:url("${chrome.runtime.getURL(`fonts/OpenRunde-${w}.woff2`)}") format("woff2");}`,
+    )
+    .join("");
 }
 
 // solid Canvas stays as the fallback where light-dark() is unsupported
@@ -660,10 +682,10 @@ function watchMenuHost(host) {
 
 function buildSuggestionBox(field) {
   removeSuggestion();
-  ensureFontFace();
   anchorField = field;
   const host = document.createElement("div");
   host.setAttribute("data-passbridge-host", "menu");
+  host.setAttribute("data-passbridge", "suggestions");
   host.setAttribute("popover", "manual");
   Object.assign(host.style, {
     position: "fixed",
@@ -673,35 +695,17 @@ function buildSuggestionBox(field) {
     background: "transparent",
     zIndex: "2147483647",
     overflow: "visible",
+    maxWidth: "320px",
   });
-  // Closed shadow holds the reset stylesheet. The list itself stays in light DOM
-  // so the row text is clickable; page rules cannot restyle the host.
+  // The list lives in the closed shadow so the page cannot restyle it into a form control.
   const shadow = host.attachShadow({ mode: "closed" });
   const reset = document.createElement("style");
-  reset.textContent = ":host{all:initial;display:block} :host::backdrop{display:none}";
-  const slot = document.createElement("slot");
-  shadow.append(reset, slot);
+  reset.textContent = `${fontFaceCss()}:host{all:initial;display:block}:host::backdrop{display:none}`;
   const box = document.createElement("div");
-  box.setAttribute("data-passbridge", "suggestions");
   box.setAttribute("role", "listbox");
-  box.setAttribute("aria-label", "PassBridge suggestions");
+  box.setAttribute("aria-label", "Saved logins");
   glassify(box);
-  Object.assign(box.style, {
-    position: "relative",
-    zIndex: "2147483647",
-  });
-  const header = document.createElement("div");
-  header.textContent = "PassBridge";
-  Object.assign(header.style, {
-    padding: "7px 12px",
-    fontSize: "11px",
-    fontWeight: "600",
-    letterSpacing: "0.02em",
-    opacity: "0.55",
-    borderBottom: "1px solid rgba(128,128,128,0.18)",
-  });
-  box.appendChild(header);
-  host.appendChild(box);
+  shadow.append(reset, box);
   (document.body || document.documentElement).appendChild(host);
   try { host.showPopover(); } catch {}
   watchMenuHost(host);
@@ -721,18 +725,27 @@ function placeFieldIcon(field) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.title = "PassBridge";
-  btn.textContent = "P";
   btn.setAttribute("aria-label", "PassBridge");
+  const mark = document.createElement("img");
+  mark.src = chrome.runtime.getURL("icons/icon48.png");
+  mark.alt = "";
+  mark.draggable = false;
+  Object.assign(mark.style, {
+    width: "100%",
+    height: "100%",
+    display: "block",
+    pointerEvents: "none",
+  });
+  btn.appendChild(mark);
   Object.assign(btn.style, {
-    width: "20px",
-    height: "20px",
+    width: "100%",
+    height: "100%",
     padding: "0",
     border: "none",
-    borderRadius: "6px",
-    background: "#0a84ff",
-    color: "#fff",
-    font: "700 11px/20px system-ui, sans-serif",
+    borderRadius: "5px",
+    background: "transparent",
     cursor: "pointer",
+    display: "block",
   });
   btn.addEventListener("mousedown", (e) => {
     if (!e.isTrusted) return;
@@ -987,19 +1000,56 @@ function fillGeneratedPassword(field, pw) {
 // fill routes through the origin-checked background path, page never sees the password
 function appendLoginRows(box, field, logins) {
   for (const login of logins) {
+    const label = login.username || "(no username)";
     const row = document.createElement("div");
-    row.textContent = login.username || "(no username)";
+    row.title = label;
     Object.assign(row.style, {
-      padding: "8px 12px",
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+      padding: "10px 12px",
       cursor: "pointer",
-      whiteSpace: "nowrap",
+      minWidth: "0",
+    });
+    const name = document.createElement("span");
+    name.textContent = label;
+    Object.assign(name.style, {
+      flex: "1",
+      minWidth: "0",
       overflow: "hidden",
       textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+      fontWeight: "500",
     });
-    registerRow(row, () => {
-      removeSuggestion();
+    const hint = document.createElement("span");
+    hint.textContent = "Fill";
+    Object.assign(hint.style, {
+      flex: "none",
+      color: "#0a84ff",
+      fontWeight: "600",
+      fontSize: "12px",
+    });
+    row.append(name, hint);
+    let busy = false;
+    registerRow(row, async () => {
+      if (busy) return;
+      busy = true;
       fillAnchor = field;
-      chrome.runtime.sendMessage({ type: "inlineFill", loginName: login });
+      let res = null;
+      try {
+        res = await chrome.runtime.sendMessage({ type: "inlineFill", loginName: login });
+      } catch {
+        res = null;
+      }
+      if (res?.ok && res.filled) {
+        removeSuggestion();
+        return;
+      }
+      busy = false;
+      hint.textContent = "Couldn't fill this page.";
+      hint.style.color = "#ff453a";
+      hint.style.fontWeight = "500";
+      positionBox();
     });
     box.appendChild(row);
   }
@@ -1366,7 +1416,8 @@ document.addEventListener(
   "focusout",
   (e) => {
     if (!suggestionEl || e.target !== anchorField) return;
-    if (e.relatedTarget && (suggestionEl.contains(e.relatedTarget) || suggestionHost?.contains(e.relatedTarget) || e.relatedTarget === iconHost)) return;
+    const next = e.relatedTarget;
+    if (next && (next === suggestionHost || next === iconHost || suggestionHost?.contains(next) || suggestionEl.contains(next))) return;
     removeSuggestion();
   },
   true,
@@ -1375,7 +1426,7 @@ document.addEventListener(
   "mousedown",
   (e) => {
     if (!suggestionEl) return;
-    if (suggestionEl?.contains(e.target) || suggestionHost?.contains(e.target) || e.target === suggestionHost || e.target === iconHost) return;
+    if (eventHitsMenu(e)) return;
     if (e.target === anchorField) return;
     // another login field's focusin rebuilds the offer, closing here first would race
     if (e.target instanceof HTMLInputElement && isLoginField(e.target)) return;

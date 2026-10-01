@@ -89,7 +89,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["fonts/*.woff2", "overlay/*"],
+      "resources": ["fonts/*.woff2", "overlay/*", "icons/icon48.png"],
       "matches": ["*://*/*"]
     }
   ]

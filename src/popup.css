@@ -90,7 +90,7 @@ main { padding: 12px; }
 .site { font-weight: 600; margin: 0 0 8px; }
 .error { color: #ff453a; margin: 8px 0 0; }
 
-input {
+#pin {
   width: 100%;
   padding: 11px;
   font: 20px var(--font);
@@ -102,7 +102,8 @@ input {
   color: var(--fg);
   margin-bottom: 10px;
 }
-input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+#pin:focus,
+.lookup input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
 
 button {
   font: inherit;
@@ -139,7 +140,42 @@ button.link:hover { background: none; }
   background: color-mix(in srgb, var(--accent) 6%, Canvas);
   border-color: color-mix(in srgb, var(--accent) 22%, transparent);
 }
-.logins .u { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.logins .u { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.logins li.account {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.logins .who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.logins button.fill {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.logins button.fill:hover { background: color-mix(in srgb, black 10%, var(--accent)); }
+.logins button.fill:disabled { opacity: 0.6; }
+.logins .copies { display: flex; gap: 14px; }
+.logins button.copy {
+  width: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 12px;
+}
+.logins button.copy:hover { background: none; text-decoration: underline; }
+.logins .fill-error { margin: 0; font-size: 12px; }
 .logins button {
   width: auto;
   padding: 6px 14px;
@@ -150,6 +186,8 @@ button.link:hover { background: none; }
   border-color: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 .logins button:hover { background: color-mix(in srgb, var(--accent) 20%, Canvas); }
+.logins button.fill:hover { background: color-mix(in srgb, black 10%, var(--accent)); }
+.logins button.copy:hover { background: none; }
 
 /* verification codes: two-line rows, the code shown in place of Fill when nothing took it */
 .codes { margin-top: 4px; }
@@ -229,8 +267,21 @@ footer button.link { text-align: left; font-size: 12px; opacity: 0.85; }
 .steps li { margin-bottom: 3px; }
 .steps button.primary { width: 100%; padding: 8px; }
 .favicon { width: 16px; height: 16px; flex: none; border-radius: 3px; }
-.lookup { display: flex; gap: 6px; margin-top: 8px; }
-.lookup input { flex: 1; }
+.lookup { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.lookup input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  padding: 8px 10px;
+  font: 13px/1.4 var(--font);
+  letter-spacing: normal;
+  text-align: left;
+  border: 1px solid var(--card-line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--fg);
+}
 body.options { width: auto; max-width: 640px; margin: 24px auto; padding: 0 16px 32px; }
 body.options h2 { font-size: 13px; margin: 18px 0 8px; }
 body.options textarea { width: 100%; min-height: 72px; font: 13px/1.4 var(--font); }
