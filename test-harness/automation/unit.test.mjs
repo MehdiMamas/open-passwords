@@ -1,5 +1,7 @@
 import { generateLoginFillScript } from "../../src/adapter/fill-script.js";
 import { INLINE_MENU_PORTS, portKeyForTab } from "../../src/adapter/ports.js";
+import { parseOtpAuth } from "../../src/otpauth.js";
+import { generateApplePassword } from "../../src/password-generate.js";
 import { hostsRelated, passwordSearchSteps } from "../../src/session/password-search.js";
 
 let failed = 0;
@@ -41,6 +43,13 @@ ok(
   childSteps.some((s) => s.envelope === "login.augustana.edu" && s.search === "augustana.edu") &&
     childSteps.some((s) => s.envelope === "augustana.edu" && s.search === "login.augustana.edu"),
 );
+
+const otp = parseOtpAuth("otpauth://totp/GitHub:alice@example.com?secret=JBSWY3DPEHPK3PXP&issuer=GitHub");
+ok("otpauth keeps issuer and account and hides the secret from the label", otp?.issuer === "GitHub" && otp?.account === "alice@example.com" && !("secret" in otp));
+ok("wifi and migration QR codes are not setup links", parseOtpAuth("WIFI:S:cafe;T:WPA;P:secret;;") === null && parseOtpAuth("otpauth-migration://offline?data=abc") === null);
+ok("apple-otpauth totp is accepted", parseOtpAuth("apple-otpauth://totp/Work?secret=JBSWY3DPEHPK3PXP&issuer=Work")?.account === "Work");
+const generated = generateApplePassword();
+ok("generated password is three hyphenated groups", /^[A-Za-z0-9]{6}-[A-Za-z0-9]{6}-[A-Za-z0-9]{6}$/.test(generated));
 
 console.log(failed ? `\n${failed} failed` : "\nunit ok");
 process.exit(failed ? 1 : 0);

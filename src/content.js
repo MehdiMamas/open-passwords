@@ -1,4 +1,6 @@
 import { AutoFillConstants } from "./autofill/hints.js";
+import { generateAlphanumericPassword, generateApplePassword } from "./password-generate.js";
+import { hideTotpBar, installQrPage, qrImageRect, selectQrRegion, showTotpBar } from "./qr-page.js";
 
 const UPSTREAM_USER = new Set(
   [...AutoFillConstants.UsernameFieldNames, ...AutoFillConstants.EmailFieldNames].map((name) => name.toLowerCase()),
@@ -335,6 +337,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     case "hideSaveBar": {
       hideSaveBar();
+      return false;
+    }
+    case "qrImageRect": {
+      sendResponse({ rect: qrImageRect() });
+      return true;
+    }
+    case "startQrSelect": {
+      if (window !== window.top) return false;
+      selectQrRegion().then((rect) => sendResponse(rect ? { ok: true, rect } : { ok: true, cancelled: true }));
+      return true;
+    }
+    case "showTotpBar": {
+      if (window !== window.top) return false;
+      showTotpBar(msg);
+      sendResponse({ ok: true });
+      return true;
+    }
+    case "hideTotpBar": {
+      hideTotpBar();
       return false;
     }
     case "generatePassword": {
@@ -940,49 +961,6 @@ function isNewPasswordField(el) {
   return Array.from(document.querySelectorAll("button, input[type=submit], input[type=button]")).some((b) =>
     /\b(sign[\s-]?up|register|create[\s-]?account|create[\s-]?your[\s-]?account)\b/i.test(b.textContent || b.value || ""),
   );
-}
-
-function randBelow(n) {
-  return crypto.getRandomValues(new Uint32Array(1))[0] % n;
-}
-function pickFrom(set) {
-  return set[randBelow(set.length)];
-}
-
-// apple's Strong Password (per rmondello): 20 chars, three CVCCVC syllables hyphenated, 1 upper + 1 digit
-function generateApplePassword() {
-  const C = "bcdfghjkmnpqrstvwxz"; // no ambiguous 'l'
-  const V = "aeiouy";
-  const groups = [];
-  for (let g = 0; g < 3; g++) {
-    groups.push([pickFrom(C), pickFrom(V), pickFrom(C), pickFrom(C), pickFrom(V), pickFrom(C)]);
-  }
-  // digit goes either side of a hyphen or at the end, per apple
-  const digitSlots = [[0, 5], [1, 0], [1, 5], [2, 0], [2, 5]];
-  const [dg, dp] = digitSlots[randBelow(digitSlots.length)];
-  groups[dg][dp] = String(randBelow(10));
-  let ug, up;
-  do {
-    ug = randBelow(3);
-    up = randBelow(6);
-  } while (ug === dg && up === dp);
-  groups[ug][up] = groups[ug][up].toUpperCase();
-  return groups.map((g) => g.join("")).join("-");
-}
-
-// apple's "Without Special Characters" fallback, 15 chars matches apple's own output
-function generateAlphanumericPassword(len = 15) {
-  const lower = "abcdefghijklmnopqrstuvwxyz";
-  const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const digit = "0123456789";
-  const all = lower + upper + digit;
-  const chars = [pickFrom(lower), pickFrom(upper), pickFrom(digit)];
-  while (chars.length < len) chars.push(pickFrom(all));
-  for (let i = chars.length - 1; i > 0; i--) {
-    const j = randBelow(i + 1);
-    [chars[i], chars[j]] = [chars[j], chars[i]];
-  }
-  return chars.join("");
 }
 
 // react can remount the input between dropdown build and click, so re-resolve the node
@@ -1654,3 +1632,5 @@ if (window === window.top) {
   if (document.readyState === "complete") tryPageLoadFill();
   else window.addEventListener("load", tryPageLoadFill, { once: true });
 }
+
+installQrPage();

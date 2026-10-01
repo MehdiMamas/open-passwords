@@ -6,6 +6,8 @@ import { labelForOs } from "./apple/os-label.js";
 import { getSettings, hostBlocked } from "./settings.js";
 import { INLINE_MENU_PORTS, portKeyForTab } from "./adapter/ports.js";
 import { generateLoginFillScript } from "./adapter/fill-script.js";
+import { generateApplePassword } from "./password-generate.js";
+import { parseOtpAuth } from "./otpauth.js";
 import { passwordSearchSteps } from "./session/password-search.js";
 
 const client = createClient();
@@ -399,9 +401,12 @@ const CONTENT_ALLOWED = new Set([
   "confirmSave",
   "neverSave",
   "dismissSave",
+  "confirmTotp",
+  "dismissTotp",
 ]);
 
 const saveOffers = new Map();
+const totpOffers = new Map();
 const cycleByTab = new Map();
 
 // the bar must answer; a closed port used to look like "no bar" and saved immediately
@@ -503,17 +508,115 @@ async function cycleFill(tab) {
   }
 }
 
+async function ensureOffscreen() {
+  if (await chrome.offscreen.hasDocument()) return;
+  const doc = {
+    url: "src/offscreen.html",
+    justification: "Copy a password and decode a QR screenshot into a verification-code link",
+  };
+  try {
+    await chrome.offscreen.createDocument({ ...doc, reasons: ["CLIPBOARD", "DOM_PARSER"] });
+  } catch {
+    if (await chrome.offscreen.hasDocument()) return;
+    await chrome.offscreen.createDocument({ ...doc, reasons: ["CLIPBOARD"] });
+  }
+}
+
 async function copyText(text) {
   const settings = await getSettings();
   const clearMs = Number(settings.clipboardClearMs) || 0;
-  try {
-    await chrome.offscreen.createDocument({
-      url: "src/offscreen.html",
-      reasons: ["CLIPBOARD"],
-      justification: "Copy a login field and clear the clipboard after a delay",
-    });
-  } catch {}
+  await ensureOffscreen();
   chrome.runtime.sendMessage({ type: "offscreenCopy", text: text || "", clearMs }).catch(() => {});
+}
+
+async function showTotpBar(tabId, payload) {
+  try {
+    const resp = await chrome.tabs.sendMessage(tabId, { type: "showTotpBar", ...payload }, { frameId: 0 });
+    return !!resp?.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function scanQrFromMenu(info, tab) {
+  if (!tab?.id || !tab.url || !/^https?:/i.test(tab.url)) return;
+  let rect = null;
+  if (info.menuItemId === "pb-qr-select") {
+    let sel;
+    try {
+      sel = await chrome.tabs.sendMessage(tab.id, { type: "startQrSelect" }, { frameId: 0 });
+    } catch {
+      await showTotpBar(tab.id, { mode: "error", error: "Couldn't start a selection on this page." });
+      return;
+    }
+    if (!sel?.ok || sel.cancelled) return;
+    rect = sel.rect;
+  } else {
+    try {
+      const resp = await chrome.tabs.sendMessage(tab.id, { type: "qrImageRect" }, { frameId: info.frameId ?? 0 });
+      rect = resp?.rect || null;
+    } catch {
+      rect = null;
+    }
+    if (!rect) {
+      await showTotpBar(tab.id, { mode: "error", error: "Right-click the image again, then scan it." });
+      return;
+    }
+  }
+  if (!rect || rect.w < 8 || rect.h < 8) {
+    await showTotpBar(tab.id, { mode: "error", error: "No QR code in that area." });
+    return;
+  }
+  let dataUrl;
+  try {
+    dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+  } catch {
+    await showTotpBar(tab.id, { mode: "error", error: "Couldn't capture the page." });
+    return;
+  }
+  await ensureOffscreen();
+  const decoded = await chrome.runtime.sendMessage({ type: "offscreenDecodeQr", dataUrl, rect });
+  if (!decoded?.ok) {
+    await showTotpBar(tab.id, { mode: "error", error: decoded?.error || "Couldn't read that QR code." });
+    return;
+  }
+  const parsed = (decoded.values || []).map(parseOtpAuth).find(Boolean);
+  if (!parsed) {
+    const sawQr = (decoded.values || []).length > 0;
+    await showTotpBar(tab.id, {
+      mode: "error",
+      error: sawQr ? "This QR is not a verification-code setup link." : "No QR code in that area.",
+    });
+    return;
+  }
+  await presentTotpOffer(tab, parsed);
+}
+
+async function presentTotpOffer(tab, parsed) {
+  await ensureConnected();
+  if (!client.ready) {
+    await showTotpBar(tab.id, { mode: "error", error: "Unlock PassBridge, then scan the code again." });
+    return;
+  }
+  if (!client.canSetUpTotp) {
+    await showTotpBar(tab.id, { mode: "error", error: "This Passwords helper can't set up verification codes." });
+    return;
+  }
+  let logins = [];
+  try {
+    logins = uniqueByUsername(await client.getLoginNamesForURL(tab.id, tab.url));
+  } catch {
+    logins = [];
+  }
+  const usernames = logins.map((login) => login.username || "(no username)").slice(0, 8);
+  totpOffers.set(tab.id, { uri: parsed.uri, pageUrl: tab.url });
+  const shown = await showTotpBar(tab.id, {
+    mode: usernames.length ? "matches" : "empty",
+    issuer: parsed.issuer,
+    account: parsed.account,
+    usernames,
+  });
+  if (!shown) totpOffers.delete(tab.id);
 }
 
 async function updateBadge(tabId) {
@@ -545,12 +648,15 @@ async function rebuildContextMenu(tab) {
   const settings = await getSettings();
   chrome.contextMenus.removeAll(() => {
     if (!settings.enableContextMenu || chrome.runtime.lastError) return;
-    chrome.contextMenus.create({ id: "pb-root", title: "PassBridge", contexts: ["editable", "page"] });
+    chrome.contextMenus.create({ id: "pb-root", title: "PassBridge", contexts: ["editable", "page", "image"] });
     chrome.contextMenus.create({ id: "pb-fill", parentId: "pb-root", title: "Autofill login", contexts: ["editable", "page"] });
     chrome.contextMenus.create({ id: "pb-user", parentId: "pb-root", title: "Copy username", contexts: ["editable", "page"] });
     chrome.contextMenus.create({ id: "pb-pass", parentId: "pb-root", title: "Copy password", contexts: ["editable", "page"] });
     chrome.contextMenus.create({ id: "pb-otp", parentId: "pb-root", title: "Copy verification code", contexts: ["editable", "page"] });
     chrome.contextMenus.create({ id: "pb-gen", parentId: "pb-root", title: "Generate password", contexts: ["editable"] });
+    chrome.contextMenus.create({ id: "pb-gen-copy", parentId: "pb-root", title: "Generate password and copy", contexts: ["editable", "page", "image"] });
+    chrome.contextMenus.create({ id: "pb-qr-image", parentId: "pb-root", title: "Scan this image for a verification code", contexts: ["image"] });
+    chrome.contextMenus.create({ id: "pb-qr-select", parentId: "pb-root", title: "Select a QR code…", contexts: ["editable", "page", "image"] });
     if (!client.ready || !tab?.url) return;
     client.getLoginNamesForURL(tab.id, tab.url).then((logins) => {
       menuLogins = uniqueByUsername(orderByMru(registrableHost(tab.url), logins || [])).slice(0, 8);
@@ -593,6 +699,14 @@ chrome.contextMenus?.onClicked.addListener(async (info, tab) => {
   if (!tab?.id) return;
   if (info.menuItemId === "pb-gen") {
     chrome.tabs.sendMessage(tab.id, { type: "generatePassword" }).catch(() => {});
+    return;
+  }
+  if (info.menuItemId === "pb-gen-copy") {
+    await copyText(generateApplePassword());
+    return;
+  }
+  if (info.menuItemId === "pb-qr-image" || info.menuItemId === "pb-qr-select") {
+    await scanQrFromMenu(info, tab);
     return;
   }
   if (String(info.menuItemId).startsWith("pb-login-")) {
@@ -668,6 +782,15 @@ try {
     }
   }, { urls: ["<all_urls>"] });
 } catch {}
+
+chrome.tabs?.onRemoved.addListener((tabId) => {
+  totpOffers.delete(tabId);
+});
+chrome.tabs?.onUpdated.addListener((tabId, info) => {
+  if (!info.url || !totpOffers.has(tabId)) return;
+  totpOffers.delete(tabId);
+  chrome.tabs.sendMessage(tabId, { type: "hideTotpBar" }, { frameId: 0 }).catch(() => {});
+});
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
@@ -886,6 +1009,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         case "dismissSave": {
           if (sender.tab?.id != null) saveOffers.delete(sender.tab.id);
+          sendResponse({ ok: true });
+          break;
+        }
+
+        case "confirmTotp": {
+          if (fromContent && sender.frameId !== 0) return sendResponse({ ok: false, error: "forbidden" });
+          const offer = sender.tab?.id != null ? totpOffers.get(sender.tab.id) : null;
+          if (sender.tab?.id != null) totpOffers.delete(sender.tab.id);
+          if (!offer) return sendResponse({ ok: false, error: "nothing to add" });
+          await ensureConnected();
+          client.launchPasswordsApp({ totpUri: offer.uri, totpPageUrl: offer.pageUrl });
+          sendResponse({ ok: true });
+          break;
+        }
+
+        case "dismissTotp": {
+          if (sender.tab?.id != null) totpOffers.delete(sender.tab.id);
           sendResponse({ ok: true });
           break;
         }
